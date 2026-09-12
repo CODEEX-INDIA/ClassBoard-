@@ -48,6 +48,7 @@ export function ViewerClient() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const overlay = useRef<SVGSVGElement>(null);
   const stage = useRef<HTMLDivElement>(null);
+  const renderTask = useRef<{ cancel: () => void } | null>(null);
   const searchParams = useSearchParams();
   const [source, setSource] = useState<ArrayBuffer>();
   const [pdf, setPdf] = useState<any>();
@@ -131,13 +132,22 @@ export function ViewerClient() {
       const scale = Math.min(availableWidth / baseViewport.width, availableHeight / baseViewport.height);
       const viewport = renderedPage.getViewport({ scale: Math.max(.25, scale) });
       const target = canvas.current!;
+      renderTask.current?.cancel();
       target.width = viewport.width;
       target.height = viewport.height;
       target.style.aspectRatio = `${viewport.width}/${viewport.height}`;
-      await renderedPage.render({ canvasContext: target.getContext("2d")!, viewport }).promise;
+      const currentRender = renderedPage.render({ canvasContext: target.getContext("2d")!, viewport });
+      renderTask.current = currentRender;
+      try {
+        await currentRender.promise;
+      } catch (error) {
+        if (!cancelled && !(error instanceof Error && error.name === "RenderingCancelledException")) throw error;
+      } finally {
+        if (renderTask.current === currentRender) renderTask.current = null;
+      }
       if (!cancelled && overlay.current) overlay.current.setAttribute("viewBox", "0 0 1000 1000");
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; renderTask.current?.cancel(); renderTask.current = null; };
   }, [pdf, page, stageSize]);
 
   const saveCloud = async (next: Annotation[]) => {
