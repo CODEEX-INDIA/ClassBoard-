@@ -47,6 +47,7 @@ function PageThumbnail({ pdf, pageNumber, active, onClick }: { pdf: any; pageNum
 export function ViewerClient() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const overlay = useRef<SVGSVGElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
   const searchParams = useSearchParams();
   const [source, setSource] = useState<ArrayBuffer>();
   const [pdf, setPdf] = useState<any>();
@@ -66,6 +67,9 @@ export function ViewerClient() {
   const [size, setSize] = useState(100);
   const [presenting, setPresenting] = useState(false);
   const [status, setStatus] = useState("Cloud sync ready");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [propertiesOpen, setPropertiesOpen] = useState(false);
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
 
   const visible = annotations.filter(annotation => annotation.pageNumber === page);
 
@@ -110,20 +114,31 @@ export function ViewerClient() {
   }, [searchParams]);
 
   useEffect(() => {
+    if (!stage.current) return;
+    const observer = new ResizeObserver(([entry]) => setStageSize({ width: entry.contentRect.width, height: entry.contentRect.height }));
+    observer.observe(stage.current);
+    return () => observer.disconnect();
+  }, [pdf]);
+
+  useEffect(() => {
     if (!pdf || !canvas.current) return;
     let cancelled = false;
     void (async () => {
       const renderedPage = await pdf.getPage(page);
-      const viewport = renderedPage.getViewport({ scale: 1.5 });
+      const baseViewport = renderedPage.getViewport({ scale: 1 });
+      const availableWidth = Math.max(320, stageSize.width - 80);
+      const availableHeight = Math.max(240, stageSize.height - 56);
+      const scale = Math.min(availableWidth / baseViewport.width, availableHeight / baseViewport.height);
+      const viewport = renderedPage.getViewport({ scale: Math.max(.25, scale) });
       const target = canvas.current!;
       target.width = viewport.width;
       target.height = viewport.height;
       target.style.aspectRatio = `${viewport.width}/${viewport.height}`;
       await renderedPage.render({ canvasContext: target.getContext("2d")!, viewport }).promise;
-      if (!cancelled && overlay.current) overlay.current.setAttribute("viewBox", `0 0 ${viewport.width} ${viewport.height}`);
+      if (!cancelled && overlay.current) overlay.current.setAttribute("viewBox", "0 0 1000 1000");
     })();
     return () => { cancelled = true; };
-  }, [pdf, page]);
+  }, [pdf, page, stageSize]);
 
   const saveCloud = async (next: Annotation[]) => {
     if (!documentId) return;
@@ -194,7 +209,7 @@ export function ViewerClient() {
 
   return <main className={presenting ? "viewer presenting" : "viewer"}>
     <header className="viewer-header"><a href="/dashboard" className="viewer-brand">← MAPLES <span>ACADEMY</span></a><div className="document-title"><strong>{documentName}</strong><small>{status}</small></div><label className="upload">Open PDF<input type="file" hidden accept=".pdf,application/pdf" onChange={event => event.target.files?.[0] && open(event.target.files[0]).catch(error => setStatus(error.message))} /></label><button onClick={() => setPresenting(value => !value)}>{presenting ? "Exit presentation" : "Present"}</button></header>
-    {pdf ? <div className="viewer-body"><aside className="page-sidebar"><strong>Pages</strong>{Array.from({ length: pages }, (_, index) => <PageThumbnail key={index + 1} pdf={pdf} pageNumber={index + 1} active={page === index + 1} onClick={() => setPage(index + 1)} />)}</aside><section className="viewer-workspace"><div className="stage"><button className="page-nav" aria-label="Previous page" disabled={page === 1} onClick={() => setPage(value => value - 1)}>‹</button><div className="page"><canvas ref={canvas} /><svg ref={overlay} onPointerDown={event => { if (tool !== "select" && tool !== "eraser") { event.currentTarget.setPointerCapture(event.pointerId); setDraft([point(event)]); } else setSelectedId(undefined); }} onPointerMove={event => draft && setDraft(current => current ? [...current, point(event)] : null)} onPointerUp={finish}>{visible.map(annotation => <AnnotationShape key={annotation.id} annotation={annotation} selected={selectedId === annotation.id} onPointerDown={onShapePointerDown} />)}{draft && <polyline className="draft" points={draft.map(current => `${current.x * 1000},${current.y * 1000}`).join(" ")} />}</svg></div><button className="page-nav" aria-label="Next page" disabled={page === pages} onClick={() => setPage(value => value + 1)}>›</button></div><div className="control-dock"><div className="tool-group">{tools.map(item => <button className={tool === item.id ? "tool-active" : ""} key={item.id} title={item.label} aria-label={item.label} onClick={() => setTool(item.id)}><span>{item.icon}</span><small>{item.label}</small></button>)}</div><div className="style-group"><label>Colour <input aria-label="Colour" type="color" value={color} onChange={event => setColor(event.target.value)} /></label><label>Width <input aria-label="Stroke width" type="range" min="1" max="24" value={width} onChange={event => setWidth(+event.target.value)} /><output>{width}px</output></label><label>Size <input aria-label="Selected object size" type="range" min="25" max="200" value={size} onChange={event => resizeSelected(+event.target.value)} /><output>{size}%</output></label><label>Opacity <input aria-label="Opacity" type="range" min="0.1" max="1" step="0.1" value={opacity} onChange={event => setOpacity(+event.target.value)} /><output>{Math.round(opacity * 100)}%</output></label></div><div className="command-group"><button title="Undo" onClick={() => { if (history.length) { const previous = history.at(-1)!; setFuture(current => [annotations, ...current]); setAnnotations(previous); setHistory(current => current.slice(0, -1)); void saveCloud(previous); } }}>↶</button><button title="Redo" onClick={() => { if (future.length) { const next = future[0]; setHistory(current => [...current, annotations]); setAnnotations(next); setFuture(current => current.slice(1)); void saveCloud(next); } }}>↷</button><button onClick={() => commit(annotations.filter(annotation => annotation.pageNumber !== page))}>Clear page</button><button className="export-button" onClick={async () => { if (!source) return; const blob = await pdfExporter.export(source, annotations); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "annotated-lesson.pdf"; link.click(); }}>Export PDF</button></div></div></section></div> : <section className="viewer-empty"><div><span className="empty-icon">＋</span><h1>Open a lesson to begin</h1><p>PDF files are saved securely to your classroom cloud.</p><label className="primary upload">Choose a PDF<input type="file" hidden accept=".pdf,application/pdf" onChange={event => event.target.files?.[0] && open(event.target.files[0]).catch(error => setStatus(error.message))} /></label></div></section>}
+    {pdf ? <div className={`viewer-body ${sidebarOpen ? "" : "sidebar-collapsed"}`}><aside className="page-sidebar"><button className="sidebar-toggle" aria-label={sidebarOpen ? "Collapse page thumbnails" : "Expand page thumbnails"} onClick={() => setSidebarOpen(value => !value)}>{sidebarOpen ? "◀" : "▶"}</button>{sidebarOpen && <><strong>Pages</strong>{Array.from({ length: pages }, (_, index) => <PageThumbnail key={index + 1} pdf={pdf} pageNumber={index + 1} active={page === index + 1} onClick={() => setPage(index + 1)} />)}</>}</aside><section className="viewer-workspace"><div className="stage" ref={stage}><button className="page-nav" aria-label="Previous page" disabled={page === 1} onClick={() => setPage(value => value - 1)}>‹</button><div className="page-frame"><div className="page-counter"><button aria-label="Previous page" disabled={page === 1} onClick={() => setPage(value => value - 1)}>‹</button><span>Page {page} / {pages}</span><button aria-label="Next page" disabled={page === pages} onClick={() => setPage(value => value + 1)}>›</button></div><div className="page"><canvas ref={canvas} /><svg ref={overlay} preserveAspectRatio="none" onPointerDown={event => { if (tool !== "select" && tool !== "eraser") { event.currentTarget.setPointerCapture(event.pointerId); setDraft([point(event)]); } else setSelectedId(undefined); }} onPointerMove={event => draft && setDraft(current => current ? [...current, point(event)] : null)} onPointerUp={finish}>{visible.map(annotation => <AnnotationShape key={annotation.id} annotation={annotation} selected={selectedId === annotation.id} onPointerDown={onShapePointerDown} />)}{draft && <polyline className="draft" points={draft.map(current => `${current.x * 1000},${current.y * 1000}`).join(" ")} />}</svg></div></div><button className="page-nav" aria-label="Next page" disabled={page === pages} onClick={() => setPage(value => value + 1)}>›</button></div><div className="control-dock"><div className="tool-group">{tools.map(item => <button className={tool === item.id ? "tool-active" : ""} key={item.id} title={item.label} aria-label={item.label} onClick={() => { setTool(item.id); setPropertiesOpen(item.id !== "select" && item.id !== "eraser"); }}><span>{item.icon}</span><small>{item.label}</small></button>)}</div>{propertiesOpen && <div className="properties-popover"><label>Colour <input aria-label="Colour" type="color" value={color} onChange={event => setColor(event.target.value)} /></label><label>Width <input aria-label="Stroke width" type="range" min="1" max="24" value={width} onChange={event => setWidth(+event.target.value)} /><output>{width}px</output></label><label>Size <input aria-label="Selected object size" type="range" min="25" max="200" value={size} onChange={event => resizeSelected(+event.target.value)} /><output>{size}%</output></label><label>Opacity <input aria-label="Opacity" type="range" min="0.1" max="1" step="0.1" value={opacity} onChange={event => setOpacity(+event.target.value)} /><output>{Math.round(opacity * 100)}%</output></label></div>}<div className="command-group"><button title="Undo" onClick={() => { if (history.length) { const previous = history.at(-1)!; setFuture(current => [annotations, ...current]); setAnnotations(previous); setHistory(current => current.slice(0, -1)); void saveCloud(previous); } }}>↶</button><button title="Redo" onClick={() => { if (future.length) { const next = future[0]; setHistory(current => [...current, annotations]); setAnnotations(next); setFuture(current => current.slice(1)); void saveCloud(next); } }}>↷</button><button className="clear-action" onClick={() => { if (window.confirm("Clear all annotations from this page?")) commit(annotations.filter(annotation => annotation.pageNumber !== page)); }}>Clear page</button><button className="export-button" onClick={async () => { if (!source) return; const blob = await pdfExporter.export(source, annotations); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "annotated-lesson.pdf"; link.click(); }}>Export PDF</button></div></div></section></div> : <section className="viewer-empty"><div><span className="empty-icon">＋</span><h1>Open a lesson to begin</h1><p>PDF files are saved securely to your classroom cloud.</p><label className="primary upload">Choose a PDF<input type="file" hidden accept=".pdf,application/pdf" onChange={event => event.target.files?.[0] && open(event.target.files[0]).catch(error => setStatus(error.message))} /></label></div></section>}
   </main>;
 }
 
