@@ -1,0 +1,6 @@
+import type { ImportedDocument, PresentationImporter } from "./types";
+import { validateUpload } from "./validation";
+const pdf: PresentationImporter = { supports: file => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"), import: async file => ({ name: file.name, mimeType: "application/pdf", data: await file.arrayBuffer(), sourceType: "pdf" }) };
+const presentation: PresentationImporter = { supports: file => /\.(ppt|pptx)$/i.test(file.name), import: async file => { const form = new FormData(); form.set("file", file); const response = await fetch("/api/import", { method: "POST", body: form }); if (!response.ok) throw new Error("This server cannot convert the presentation yet."); return { name: file.name.replace(/\.pptx?$/i, ".pdf"), mimeType: "application/pdf", data: await response.arrayBuffer(), sourceType: file.name.toLowerCase().endsWith(".pptx") ? "pptx" : "ppt" }; } };
+export const importers = [pdf, presentation];
+export async function importDocument(file: File): Promise<ImportedDocument> { validateUpload(file); const importer = importers.find(item => item.supports(file)); if (!importer) throw new Error("Choose a PDF, PPT, or PPTX file."); return importer.import(file); }

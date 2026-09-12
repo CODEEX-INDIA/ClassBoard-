@@ -1,0 +1,4 @@
+import Link from "next/link";
+import { PhoneQr } from "../../components/auth/phone-qr";
+import { SignInPanel } from "../../components/auth/sign-in-panel";
+export default function SignInPage() { return <main className="auth-page"><section><Link href="/">← MAPLES ACADEMY SMARTBOARD TOOL</Link><h1>Sign in</h1><p>Securely access your saved lessons and classroom workspace.</p><SignInPanel /></section><aside><h2>Phone sign in</h2><PhoneQr /><p>Scan to open the secure sign-in page on your phone.</p><p className="muted">Desktop approval is enabled only after Supabase is configured with a server-issued, single-use pairing session.</p></aside></main>; }

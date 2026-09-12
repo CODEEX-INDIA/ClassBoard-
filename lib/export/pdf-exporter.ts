@@ -1,0 +1,12 @@
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import type { Annotation } from "../../types/annotation";
+
+function color(hex: string) { const n = Number.parseInt(hex.replace("#", ""), 16); return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255); }
+export interface DocumentExporter { export(pdf: ArrayBuffer, annotations: Annotation[]): Promise<Blob>; }
+export const pdfExporter: DocumentExporter = { async export(pdf, annotations) { const doc = await PDFDocument.load(pdf); const font = await doc.embedFont(StandardFonts.Helvetica); for (const annotation of annotations) { const page = doc.getPage(annotation.pageNumber - 1); if (!page) continue; const { width, height } = page.getSize(), s = annotation.style, x = annotation.x * width, y = height - (annotation.y + annotation.height) * height, w = annotation.width * width, h = annotation.height * height, options = { color: color(s.color), opacity: s.opacity, borderWidth: s.strokeWidth, borderColor: color(s.color) };
+      if (annotation.type === "ink" || annotation.type === "pencil" || annotation.type === "marker" || annotation.type === "calligraphy" || annotation.type === "highlighter") { const points = annotation.points ?? []; for (let i = 1; i < points.length; i++) page.drawLine({ start: { x: points[i - 1].x * width, y: height - points[i - 1].y * height }, end: { x: points[i].x * width, y: height - points[i].y * height }, color: color(s.color), thickness: s.strokeWidth, opacity: annotation.type === "highlighter" ? Math.min(s.opacity, .45) : s.opacity }); }
+      else if (annotation.type === "text" || annotation.type === "note") page.drawText(annotation.content ?? "", { x, y: y + h - (s.fontSize ?? 16), size: s.fontSize ?? 16, font, color: color(s.color), opacity: s.opacity, maxWidth: w || undefined });
+      else if (annotation.type === "ellipse") page.drawEllipse({ x: x + w / 2, y: y + h / 2, xScale: Math.abs(w / 2), yScale: Math.abs(h / 2), ...options });
+      else if (annotation.type === "line" || annotation.type === "arrow") { page.drawLine({ start: { x, y: y + h }, end: { x: x + w, y }, color: color(s.color), thickness: s.strokeWidth, opacity: s.opacity }); if (annotation.type === "arrow") page.drawSvgPath(`M ${x + w} ${y} l -10 5 l 3 -10 Z`, { color: color(s.color), opacity: s.opacity }); }
+      else page.drawRectangle({ x, y, width: w, height: h, ...options });
+    } const bytes = Uint8Array.from(await doc.save()); return new Blob([bytes], { type: "application/pdf" }); } };

@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function DashboardPage() { return <main className="dashboard"><header><Link href="/">MAPLES ACADEMY SMARTBOARD TOOL</Link><Link className="primary" href="/viewer">New document</Link></header><section className="empty"><h1>My documents</h1><p>Your saved lessons will appear here after Supabase is connected.</p><Link className="primary" href="/viewer">Open a document</Link></section></main>; }

@@ -1,0 +1,2 @@
+import { MobileUpload } from "../../../components/upload/mobile-upload";
+export default async function UploadPage({ params }: { params: Promise<{ sessionId: string }> }) { const { sessionId } = await params; return <MobileUpload sessionId={sessionId} />; }
