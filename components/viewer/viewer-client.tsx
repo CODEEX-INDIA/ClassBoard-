@@ -53,7 +53,7 @@ const shortTitle = (filename: string) => {
   return base.length > 28 ? `${base.slice(0, 25).trimEnd()}...${extension}` : filename;
 };
 
-function PageThumbnail({ pdf, sourcePage, pageNumber, background, active, canDelete, onClick, onDelete }: { pdf: any; sourcePage?: number; pageNumber: number; background: string; active: boolean; canDelete?: boolean; onClick: () => void; onDelete?: () => void }) {
+function PageThumbnail({ pdf, sourcePage, pageNumber, background, active, onClick }: { pdf: any; sourcePage?: number; pageNumber: number; background: string; active: boolean; onClick: () => void }) {
   const thumbnail = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     let cancelled = false;
@@ -80,27 +80,7 @@ function PageThumbnail({ pdf, sourcePage, pageNumber, background, active, canDel
     });
     return () => { cancelled = true; };
   }, [pdf, sourcePage, pageNumber, background]);
-  return (
-    <div className="page-thumb-wrapper">
-      <button className={`page-thumb ${active ? "active" : ""}`} onClick={onClick} aria-label={`Go to page ${pageNumber}`}>
-        <canvas ref={thumbnail} />
-        <span>{pageNumber}</span>
-      </button>
-      {canDelete && onDelete && (
-        <button
-          className="page-thumb-delete"
-          title="Delete this page"
-          aria-label={`Delete page ${pageNumber}`}
-          onClick={e => {
-            e.stopPropagation();
-            onDelete();
-          }}
-        >
-          ✕
-        </button>
-      )}
-    </div>
-  );
+  return <button className={`page-thumb ${active ? "active" : ""}`} onClick={onClick} aria-label={`Go to page ${pageNumber}`}><canvas ref={thumbnail} /><span>{pageNumber}</span></button>;
 }
 
 
@@ -895,17 +875,7 @@ export function ViewerClient() {
                   <button onClick={() => deletePage()} disabled={pageOrder.length <= 1} className="delete-page-btn">🗑 Delete page</button>
                 </div>
                 {pageOrder.map((item, index) => (
-                  <PageThumbnail
-                    key={item.id}
-                    pdf={pdf}
-                    sourcePage={item.sourcePage}
-                    pageNumber={index + 1}
-                    background={item.background}
-                    active={page === index + 1}
-                    canDelete={pageOrder.length > 1}
-                    onClick={() => setPage(index + 1)}
-                    onDelete={() => deletePage(index)}
-                  />
+                  <PageThumbnail key={item.id} pdf={pdf} sourcePage={item.sourcePage} pageNumber={index + 1} background={item.background} active={page === index + 1} onClick={() => setPage(index + 1)} />
                 ))}
               </>
             )}
