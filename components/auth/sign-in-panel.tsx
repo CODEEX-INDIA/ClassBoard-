@@ -3,16 +3,14 @@ import { FormEvent, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "../../lib/supabase/client";
 
-type Method = "email" | "phone";
 type AuthMode = "signIn" | "signUp";
 
 export function SignInPanel() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<AuthMode>("signIn");
-  const [method, setMethod] = useState<Method>("email");
   const [fullName, setFullName] = useState("");
-  const [identifier, setIdentifier] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
 
@@ -23,11 +21,11 @@ export function SignInPanel() {
       const client = getSupabaseBrowserClient();
 
       if (mode === "signUp") {
-        const result = await client.auth.signUp(
-          method === "email"
-            ? { email: identifier, password, options: { data: { full_name: fullName } } }
-            : { phone: identifier, password, options: { data: { full_name: fullName } } }
-        );
+        const result = await client.auth.signUp({
+          email,
+          password,
+          options: { data: { full_name: fullName } },
+        });
         if (result.error) {
           setMessage(result.error.message);
           return;
@@ -40,9 +38,10 @@ export function SignInPanel() {
           setMessage("Account created! Check your email inbox to confirm your account, then sign in.");
         }
       } else {
-        const result = await client.auth.signInWithPassword(
-          method === "email" ? { email: identifier, password } : { phone: identifier, password }
-        );
+        const result = await client.auth.signInWithPassword({
+          email,
+          password,
+        });
         if (result.error) {
           setMessage(result.error.message);
           return;
@@ -58,7 +57,7 @@ export function SignInPanel() {
 
   return (
     <form className="sign-in" onSubmit={submit}>
-      <div className="tabs" style={{ display: "flex", gap: "0.5rem", marginBottom: "0.25rem" }}>
+      <div className="tabs" style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
         <button
           type="button"
           className={mode === "signIn" ? "active" : ""}
@@ -77,15 +76,6 @@ export function SignInPanel() {
         </button>
       </div>
 
-      <div className="tabs">
-        <button type="button" className={method === "email" ? "active" : ""} onClick={() => setMethod("email")}>
-          Email
-        </button>
-        <button type="button" className={method === "phone" ? "active" : ""} onClick={() => setMethod("phone")}>
-          Phone
-        </button>
-      </div>
-
       {mode === "signUp" && (
         <label>
           Full name / Teacher name
@@ -99,13 +89,13 @@ export function SignInPanel() {
       )}
 
       <label>
-        {method === "email" ? "Email address" : "Phone number"}
+        Email address
         <input
           required
-          type={method === "email" ? "email" : "tel"}
-          value={identifier}
-          onChange={e => setIdentifier(e.target.value)}
-          placeholder={method === "email" ? "teacher@school.edu" : "+91…"}
+          type="email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          placeholder="teacher@school.edu"
         />
       </label>
 
