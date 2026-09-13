@@ -565,34 +565,56 @@ export function ViewerClient() {
   const finish = (event: PointerEvent) => {
     if (!draft || !overlay.current || tool === "select" || tool === "pan" || tool.includes("eraser")) return;
     const points = [...draft, point(event)];
-    const rawBox = bounds(points);
-    if (tool === "text") {
-      const box = { ...rawBox, width: Math.max(rawBox.width, 0.12), height: Math.max(rawBox.height, 0.05) };
-      setEditingId(undefined);
-      setTextPoints([{ x: box.x, y: box.y }, { x: box.x + box.width, y: box.y + box.height }]);
-      setTextValue("");
-      setDraft(null);
-      return;
+    let rawBox = bounds(points);
+
+    // If tap/click on canvas for shapes/text, use default shape dimensions centered at tap position
+    const isClick = rawBox.width < 0.02 && rawBox.height < 0.02;
+    if (isClick && !drawingTypes.includes(tool as AnnotationType)) {
+      const defaultW = tool === "graph" ? 0.35 : tool === "text" ? 0.22 : tool === "line" || tool === "arrow" ? 0.25 : 0.18;
+      const defaultH = tool === "graph" ? 0.25 : tool === "text" ? 0.08 : tool === "line" || tool === "arrow" ? 0.12 : 0.14;
+      const pt = points[0];
+      rawBox = {
+        x: Math.max(0, Math.min(1 - defaultW, pt.x - defaultW / 2)),
+        y: Math.max(0, Math.min(1 - defaultH, pt.y - defaultH / 2)),
+        width: defaultW,
+        height: defaultH,
+      };
     }
 
     const strokeW = tool === "highlighter" ? Math.max(width, 14) : width;
     const currentOpacity = tool === "highlighter" ? Math.min(opacity, 0.45) : opacity;
 
+    let pts: Point[] | undefined = undefined;
+    if (drawingTypes.includes(tool as AnnotationType)) {
+      pts = points;
+    } else if (tool === "line" || tool === "arrow") {
+      pts = isClick
+        ? [{ x: rawBox.x, y: rawBox.y }, { x: rawBox.x + rawBox.width, y: rawBox.y + rawBox.height }]
+        : points;
+    }
+
+    const createdId = createId();
     const annotation: Annotation = {
-      id: createId(),
+      id: createdId,
       documentId: documentId ?? "",
       pageNumber: page,
       type: tool,
       ...rawBox,
       rotation: 0,
       style: { color, fill: fillColor, opacity: currentOpacity, strokeWidth: strokeW, fontSize, fontFamily },
-      content: undefined,
-      points: drawingTypes.includes(tool as AnnotationType) || tool === "line" || tool === "arrow" ? points : undefined,
+      content: tool === "text" ? "New Text" : undefined,
+      points: pts,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+
     commit([...annotations, annotation]);
     setDraft(null);
+
+    // Auto-select the newly added shape/annotation directly after creation
+    setSelectedId(createdId);
+    setTool("select");
+    setPropertiesOpen(true);
   };
 
   const handleImageFile = (file: File, dropPoint?: Point) => {

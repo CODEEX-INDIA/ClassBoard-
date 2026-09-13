@@ -10,11 +10,25 @@ function color(hex: string) {
 }
 
 async function getPngBytes(imageUrl: string): Promise<Uint8Array | null> {
+  if (imageUrl.startsWith("data:image/png") || imageUrl.startsWith("data:image/jpeg") || imageUrl.startsWith("data:image/jpg")) {
+    try {
+      const base64Data = imageUrl.split(",")[1];
+      if (base64Data) {
+        const binary = atob(base64Data.trim().replace(/\s/g, ""));
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes;
+      }
+    } catch {}
+  }
+
   try {
     if (typeof window !== "undefined" && typeof document !== "undefined") {
       return await new Promise<Uint8Array | null>((resolve) => {
         const img = new Image();
-        img.crossOrigin = "anonymous";
+        if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
+          img.crossOrigin = "anonymous";
+        }
         img.onload = () => {
           try {
             const canvas = document.createElement("canvas");
@@ -25,7 +39,7 @@ async function getPngBytes(imageUrl: string): Promise<Uint8Array | null> {
               ctx.drawImage(img, 0, 0);
               const pngUrl = canvas.toDataURL("image/png");
               const base64 = pngUrl.split(",")[1];
-              const binary = atob(base64);
+              const binary = atob(base64.replace(/\s/g, ""));
               const bytes = new Uint8Array(binary.length);
               for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
               resolve(bytes);
@@ -42,7 +56,7 @@ async function getPngBytes(imageUrl: string): Promise<Uint8Array | null> {
 
   try {
     const base64Data = imageUrl.includes(",") ? imageUrl.split(",")[1] : imageUrl;
-    const binary = atob(base64Data.trim());
+    const binary = atob(base64Data.trim().replace(/\s/g, ""));
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     return bytes;
