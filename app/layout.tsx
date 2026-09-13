@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./viewer.css";
 import "./viewer-overrides.css";
+import "./viewer-enhancements.css";
 
 export const metadata: Metadata = {
   title: "MAPLES ACADEMY SMARTBOARD TOOL",
