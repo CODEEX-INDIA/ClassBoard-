@@ -37,11 +37,14 @@ const strokeWidthPresets = [{ label: "Thin", val: 2 }, { label: "Med", val: 4 },
 const fontFamilies = [
   { label: "Inter / Clean", val: "Inter, system-ui, sans-serif" },
   { label: "Arial Bold", val: "Arial, Helvetica, sans-serif" },
-  { label: "Roboto", val: "Roboto, sans-serif" },
-  { label: "Serif", val: "Georgia, serif" },
-  { label: "Monospace", val: "Courier New, monospace" },
+  { label: "Caveat / Handwriting", val: "'Caveat', 'Comic Sans MS', cursive" },
+  { label: "Roboto / Modern", val: "Roboto, sans-serif" },
+  { label: "Georgia / Serif", val: "Georgia, serif" },
+  { label: "Courier / Monospace", val: "'Courier New', monospace" },
+  { label: "OpenDyslexic / Readable", val: "'OpenDyslexic', 'Comic Sans MS', sans-serif" },
+  { label: "Playfair / Classic", val: "'Playfair Display', Georgia, serif" },
 ];
-const fontSizePresets = [18, 28, 42, 64, 96];
+const fontSizePresets = [18, 28, 36, 48, 64, 80, 96, 120];
 
 const drawingTypes: AnnotationType[] = ["ink", "calligraphy", "highlighter"];
 type ViewerPage = { id: string; sourcePage?: number; background: string; aspectRatio?: "16:9" | "4:3" | "portrait" };
@@ -820,6 +823,13 @@ export function ViewerClient() {
         }));
       }
 
+      let scaledFontSize = selectedAnnotation?.type === "text" ? selectedAnnotation.style.fontSize : undefined;
+      if (selectedAnnotation?.type === "text" && init.height > 0) {
+        const scaleFactor = newH / init.height;
+        const initialFS = selectedAnnotation.style.fontSize ?? 32;
+        scaledFontSize = Math.max(12, Math.min(160, Math.round(initialFS * scaleFactor)));
+      }
+
       setAnnotations(curr => curr.map(a => a.id === selectedId ? {
         ...a,
         x: newX,
@@ -827,6 +837,7 @@ export function ViewerClient() {
         width: newW,
         height: newH,
         points: scaledPoints,
+        style: a.type === "text" && scaledFontSize ? { ...a.style, fontSize: scaledFontSize } : a.style,
       } : a));
     }
   };
@@ -1165,24 +1176,58 @@ export function ViewerClient() {
                     </label>
                   )}
 
-                  {/* Font Controls if Text is active */}
+                  {/* Font & Text Size Controls */}
                   {(tool === "text" || selectedAnnotation?.type === "text") && (
                     <>
                       <label>
-                        Font
+                        Font Family
                         <select
                           value={selectedAnnotation?.style.fontFamily ?? fontFamily}
                           onChange={e => {
-                            setFontFamily(e.target.value);
-                            if (selectedAnnotation) updateSelected({ style: { fontFamily: e.target.value } });
+                            const newFont = e.target.value;
+                            setFontFamily(newFont);
+                            if (selectedAnnotation) updateSelected({ style: { fontFamily: newFont } });
                           }}
                         >
                           {fontFamilies.map(f => <option key={f.val} value={f.val}>{f.label}</option>)}
                         </select>
                       </label>
+
                       <label>
-                        Size
+                        Text Size ({(selectedAnnotation?.style.fontSize ?? fontSize)}px)
                         <div className="stroke-presets">
+                          <button
+                            type="button"
+                            className="stroke-btn"
+                            title="Decrease text size"
+                            onClick={() => {
+                              const curr = selectedAnnotation?.style.fontSize ?? fontSize;
+                              const nextFS = Math.max(12, curr - 4);
+                              setFontSize(nextFS);
+                              if (selectedAnnotation) {
+                                const estHeight = Math.max(selectedAnnotation.height, (nextFS * 1.5) / 1000);
+                                updateSelected({ height: estHeight, style: { fontSize: nextFS } });
+                              }
+                            }}
+                          >
+                            A–
+                          </button>
+                          <button
+                            type="button"
+                            className="stroke-btn"
+                            title="Increase text size"
+                            onClick={() => {
+                              const curr = selectedAnnotation?.style.fontSize ?? fontSize;
+                              const nextFS = Math.min(160, curr + 6);
+                              setFontSize(nextFS);
+                              if (selectedAnnotation) {
+                                const estHeight = Math.max(selectedAnnotation.height, (nextFS * 1.5) / 1000);
+                                updateSelected({ height: estHeight, style: { fontSize: nextFS } });
+                              }
+                            }}
+                          >
+                            A+
+                          </button>
                           {fontSizePresets.map(fs => (
                             <button
                               key={fs}
@@ -1190,13 +1235,32 @@ export function ViewerClient() {
                               className={`stroke-btn ${(selectedAnnotation?.style.fontSize ?? fontSize) === fs ? "active" : ""}`}
                               onClick={() => {
                                 setFontSize(fs);
-                                if (selectedAnnotation) updateSelected({ style: { fontSize: fs } });
+                                if (selectedAnnotation) {
+                                  const estHeight = Math.max(selectedAnnotation.height, (fs * 1.5) / 1000);
+                                  updateSelected({ height: estHeight, style: { fontSize: fs } });
+                                }
                               }}
                             >
                               {fs}px
                             </button>
                           ))}
                         </div>
+                        <input
+                          aria-label="Text size slider"
+                          type="range"
+                          min="12"
+                          max="160"
+                          step="2"
+                          value={selectedAnnotation?.style.fontSize ?? fontSize}
+                          onChange={e => {
+                            const val = +e.target.value;
+                            setFontSize(val);
+                            if (selectedAnnotation) {
+                              const estHeight = Math.max(selectedAnnotation.height, (val * 1.5) / 1000);
+                              updateSelected({ height: estHeight, style: { fontSize: val } });
+                            }
+                          }}
+                        />
                       </label>
                     </>
                   )}

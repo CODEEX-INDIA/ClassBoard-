@@ -9,6 +9,48 @@ function color(hex: string) {
   return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
 }
 
+async function getPngBytes(imageUrl: string): Promise<Uint8Array | null> {
+  try {
+    if (typeof window !== "undefined" && typeof document !== "undefined") {
+      return await new Promise<Uint8Array | null>((resolve) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.naturalWidth || 400;
+            canvas.height = img.naturalHeight || 300;
+            const ctx = canvas.getContext("2d");
+            if (ctx) {
+              ctx.drawImage(img, 0, 0);
+              const pngUrl = canvas.toDataURL("image/png");
+              const base64 = pngUrl.split(",")[1];
+              const binary = atob(base64);
+              const bytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+              resolve(bytes);
+              return;
+            }
+          } catch {}
+          resolve(null);
+        };
+        img.onerror = () => resolve(null);
+        img.src = imageUrl;
+      });
+    }
+  } catch {}
+
+  try {
+    const base64Data = imageUrl.includes(",") ? imageUrl.split(",")[1] : imageUrl;
+    const binary = atob(base64Data.trim());
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
 export type ExportPage = { sourcePage?: number; background: string };
 export interface DocumentExporter { export(pdf: ArrayBuffer | null, annotations: Annotation[], pages?: ExportPage[]): Promise<Blob>; }
 
@@ -85,14 +127,21 @@ export const pdfExporter: DocumentExporter = {
         page.drawLine({ start: { x: cx, y }, end: { x: cx, y: y + h }, color: strokeCol, thickness: s.strokeWidth * 1.2, opacity: s.opacity });
       } else if (annotation.type === "image" && annotation.content) {
         try {
-          const isPng = annotation.content.includes("image/png");
-          const base64Data = annotation.content.split(",")[1];
-          if (base64Data) {
-            const imageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-            const embedded = isPng ? await doc.embedPng(imageBytes) : await doc.embedJpg(imageBytes);
-            page.drawImage(embedded, { x, y, width: w, height: h, opacity: s.opacity });
+          const pngBytes = await getPngBytes(annotation.content);
+          if (pngBytes) {
+            const embedded = await doc.embedPng(pngBytes);
+            page.drawImage(embedded, { x, y, width: w, height: h, opacity: s.opacity ?? 1 });
+          } else {
+            const isPng = annotation.content.includes("image/png");
+            const base64Data = annotation.content.split(",")[1] || annotation.content;
+            const binary = atob(base64Data.trim());
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            const embedded = isPng ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+            page.drawImage(embedded, { x, y, width: w, height: h, opacity: s.opacity ?? 1 });
           }
-        } catch {
+        } catch (err) {
+          console.warn("Failed to embed image in PDF export:", err);
           page.drawRectangle({ x, y, width: w, height: h, ...baseOptions });
         }
       } else if (annotation.type === "text" || annotation.type === "note") {

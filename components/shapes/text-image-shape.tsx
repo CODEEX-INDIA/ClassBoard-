@@ -33,6 +33,10 @@ export function TextImageShape({ annotation, selected, onPointerDown }: ShapeCom
     );
   }
 
+  const rawContent = annotation.content || "Text";
+  const lines = rawContent.split("\n");
+  const lineGap = fontSize * 1.15;
+
   return (
     <g
       className={selected ? "annotation selected" : "annotation"}
@@ -40,16 +44,20 @@ export function TextImageShape({ annotation, selected, onPointerDown }: ShapeCom
       transform={rot ? `rotate(${rot} ${cx} ${cy})` : undefined}
       opacity={opacity}
     >
-      <rect x={x} y={y} width={width} height={height} fill="none" stroke={selected ? "#2563eb" : "transparent"} strokeWidth={1} strokeDasharray="3 3" />
+      <rect x={x} y={y} width={Math.max(width, 60)} height={Math.max(height, fontSize * 1.3)} fill="none" stroke={selected ? "#2563eb" : "transparent"} strokeWidth={1} strokeDasharray="3 3" />
       <text
         x={x + 4}
-        y={y + fontSize * 0.85}
+        y={y + fontSize * 0.82}
         fill={color}
         fontSize={fontSize}
         fontFamily={fontFamily}
         fontWeight="bold"
       >
-        {annotation.content || "Text"}
+        {lines.map((line, idx) => (
+          <tspan key={idx} x={x + 4} dy={idx === 0 ? 0 : lineGap}>
+            {line}
+          </tspan>
+        ))}
       </text>
     </g>
   );
