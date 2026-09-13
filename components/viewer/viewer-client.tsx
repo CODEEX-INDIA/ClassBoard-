@@ -50,6 +50,26 @@ const drawingTypes: AnnotationType[] = ["ink", "calligraphy", "highlighter"];
 type ViewerPage = { id: string; sourcePage?: number; background: string; aspectRatio?: "16:9" | "4:3" | "portrait" };
 const pageLayoutKey = (documentId: string) => `maples-page-layout:${documentId}`;
 
+function pointsToSmoothPath(points: { x: number; y: number }[]): string {
+  if (!points || points.length === 0) return "";
+  if (points.length === 1) {
+    const p = points[0];
+    return `M ${p.x * 1000} ${p.y * 1000} L ${(p.x + 0.0005) * 1000} ${(p.y + 0.0005) * 1000}`;
+  }
+  if (points.length === 2) {
+    return `M ${points[0].x * 1000} ${points[0].y * 1000} L ${points[1].x * 1000} ${points[1].y * 1000}`;
+  }
+
+  let d = `M ${points[0].x * 1000} ${points[0].y * 1000}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const xc = (points[i].x + points[i + 1].x) / 2;
+    const yc = (points[i].y + points[i + 1].y) / 2;
+    d += ` Q ${points[i].x * 1000} ${points[i].y * 1000}, ${xc * 1000} ${yc * 1000}`;
+  }
+  d += ` L ${points[points.length - 1].x * 1000} ${points[points.length - 1].y * 1000}`;
+  return d;
+}
+
 const shortTitle = (filename: string) => {
   const extension = filename.match(/\.[^.]+$/)?.[0] ?? "";
   const base = filename.slice(0, filename.length - extension.length).replace(/\.+$/, "").trim();
@@ -611,10 +631,13 @@ export function ViewerClient() {
     commit([...annotations, annotation]);
     setDraft(null);
 
-    // Auto-select the newly added shape/annotation directly after creation
-    setSelectedId(createdId);
-    setTool("select");
-    setPropertiesOpen(true);
+    // Auto-select ONLY for shapes & text (do NOT auto-select for pencil/drawing tools so pencil stays active)
+    const isDrawingTool = drawingTypes.includes(tool as AnnotationType);
+    if (!isDrawingTool) {
+      setSelectedId(createdId);
+      setTool("select");
+      setPropertiesOpen(true);
+    }
   };
 
   const handleImageFile = (file: File, dropPoint?: Point) => {
@@ -1087,7 +1110,19 @@ export function ViewerClient() {
                         onStartTransform={startTransform}
                       />
                     )}
-                    {draft && <polyline className="draft" points={draft.map(current => `${current.x * 1000},${current.y * 1000}`).join(" ")} />}
+                    {draft && (
+                      <path
+                        className="draft"
+                        d={pointsToSmoothPath(draft)}
+                        stroke={color}
+                        strokeWidth={tool === "highlighter" ? Math.max(width, 14) : width}
+                        fill="none"
+                        opacity={tool === "highlighter" ? Math.min(opacity, 0.45) : opacity}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={tool === "highlighter" ? { mixBlendMode: "multiply" } : undefined}
+                      />
+                    )}
                     {eraserPos && tool.includes("eraser") && (
                       <circle
                         cx={eraserPos.x * 1000}
