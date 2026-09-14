@@ -9,32 +9,107 @@ import type { ShapeComponentProps } from "./types";
 
 export { TransformBoundingBox, type TransformHandle } from "./transform-box";
 
+const PAD = 18; // extra invisible hit-area padding in SVG units (viewBox is 0–1000)
+
+/** Wraps any shape in a <g> with an invisible enlarged rect for easier touch/tap selection */
+function HitAreaWrapper({
+  annotation,
+  selected,
+  onPointerDown,
+  children,
+}: ShapeComponentProps & { children: React.ReactNode }) {
+  const x = annotation.x * 1000 - PAD;
+  const y = annotation.y * 1000 - PAD;
+  const w = annotation.width * 1000 + PAD * 2;
+  const h = annotation.height * 1000 + PAD * 2;
+  const cx = annotation.x * 1000 + (annotation.width * 1000) / 2;
+  const cy = annotation.y * 1000 + (annotation.height * 1000) / 2;
+  const rot = annotation.rotation ?? 0;
+
+  return (
+    <g
+      style={{ cursor: selected ? "grab" : "pointer" }}
+      transform={rot ? `rotate(${rot} ${cx} ${cy})` : undefined}
+    >
+      {/* Invisible padded hit area for easy tap/select */}
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        fill="transparent"
+        stroke="none"
+        pointerEvents="all"
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          onPointerDown(e as React.PointerEvent, annotation);
+        }}
+        style={{ cursor: selected ? "grab" : "pointer" }}
+      />
+      {children}
+    </g>
+  );
+}
+
 export function AnnotationShape(props: ShapeComponentProps) {
-  const { annotation } = props;
+  const { annotation, selected, onPointerDown } = props;
+
+  // Wrap onPointerDown to always stopPropagation — prevents background from deselecting on tap
+  const wrappedOnPointerDown = (e: React.PointerEvent, a: typeof annotation) => {
+    e.stopPropagation();
+    onPointerDown(e, a);
+  };
+
+  const wrappedProps = { ...props, onPointerDown: wrappedOnPointerDown };
 
   const brushTypes = ["ink", "calligraphy", "highlighter"];
   const basicShapeTypes = ["rectangle", "ellipse", "triangle", "diamond", "star", "cloud"];
   const connectorTypes = ["line", "arrow"];
 
   if (brushTypes.includes(annotation.type)) {
-    return <BrushShape {...props} />;
+    // Brush strokes: use HitAreaWrapper with a wide stroke ghost path for easy grab
+    return (
+      <HitAreaWrapper {...props} onPointerDown={wrappedOnPointerDown}>
+        <BrushShape {...wrappedProps} />
+      </HitAreaWrapper>
+    );
   }
 
   if (basicShapeTypes.includes(annotation.type)) {
-    return <BasicShape {...props} />;
+    return (
+      <HitAreaWrapper {...props} onPointerDown={wrappedOnPointerDown}>
+        <BasicShape {...wrappedProps} />
+      </HitAreaWrapper>
+    );
   }
 
   if (connectorTypes.includes(annotation.type)) {
-    return <ConnectorShape {...props} />;
+    return (
+      <HitAreaWrapper {...props} onPointerDown={wrappedOnPointerDown}>
+        <ConnectorShape {...wrappedProps} />
+      </HitAreaWrapper>
+    );
   }
 
   if (annotation.type === "graph") {
-    return <GraphShape {...props} />;
+    return (
+      <HitAreaWrapper {...props} onPointerDown={wrappedOnPointerDown}>
+        <GraphShape {...wrappedProps} />
+      </HitAreaWrapper>
+    );
   }
 
   if (annotation.type === "text" || annotation.type === "image") {
-    return <TextImageShape {...props} />;
+    return (
+      <HitAreaWrapper {...props} onPointerDown={wrappedOnPointerDown}>
+        <TextImageShape {...wrappedProps} />
+      </HitAreaWrapper>
+    );
   }
 
-  return <BasicShape {...props} />;
+  return (
+    <HitAreaWrapper {...props} onPointerDown={wrappedOnPointerDown}>
+      <BasicShape {...wrappedProps} />
+    </HitAreaWrapper>
+  );
 }

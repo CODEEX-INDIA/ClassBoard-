@@ -198,6 +198,18 @@ export function ViewerClient() {
   const [isPanning, setIsPanning] = useState(false);
   const panStart = useRef({ x: 0, y: 0 });
 
+  // Pinch-to-zoom refs — store snapshot at pinch start
+  const pinchRef = useRef<{
+    dist: number;
+    zoom: number;
+    pan: { x: number; y: number };
+    mid: { x: number; y: number };
+  } | null>(null);
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  useEffect(() => { panRef.current = pan; }, [pan]);
+
   // Transform state
   const [transforming, setTransforming] = useState<{
     handle: TransformHandle;
@@ -328,6 +340,106 @@ export function ViewerClient() {
     observer.observe(stage.current);
     return () => observer.disconnect();
   }, []);
+
+  // ─── Pinch-to-zoom (touch) ───────────────────────────────────────────────
+  // Store handlers in refs so they can be attached/removed from both stage and SVG overlay
+  const pinchHandlersRef = useRef<{
+    onTouchStart: (e: TouchEvent) => void;
+    onTouchMove: (e: TouchEvent) => void;
+    onTouchEnd: (e: TouchEvent) => void;
+  } | null>(null);
+
+  useEffect(() => {
+    const el = stage.current;
+    if (!el) return;
+
+    const getTouchDist = (t: TouchList) =>
+      Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+
+    const getTouchMid = (t: TouchList) => ({
+      x: (t[0].clientX + t[1].clientX) / 2,
+      y: (t[0].clientY + t[1].clientY) / 2,
+    });
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        pinchRef.current = {
+          dist: getTouchDist(e.touches),
+          zoom: zoomRef.current,
+          pan: { ...panRef.current },
+          mid: getTouchMid(e.touches),
+        };
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && pinchRef.current) {
+        e.preventDefault();
+        const newDist = getTouchDist(e.touches);
+        const scale = newDist / pinchRef.current.dist;
+        const newZoom = Math.max(0.25, Math.min(4.0, +(pinchRef.current.zoom * scale).toFixed(3)));
+
+        // Focal-point pan adjustment: keep the midpoint stationary on screen
+        const newMid = getTouchMid(e.touches);
+        const dx = newMid.x - pinchRef.current.mid.x;
+        const dy = newMid.y - pinchRef.current.mid.y;
+
+        // Compensate for zoom change so focal point doesn't jump
+        const zoomDelta = newZoom - pinchRef.current.zoom;
+        const rect = el.getBoundingClientRect();
+        const focalX = pinchRef.current.mid.x - rect.left - rect.width / 2;
+        const focalY = pinchRef.current.mid.y - rect.top - rect.height / 2;
+
+        const newPanX = pinchRef.current.pan.x + dx - focalX * zoomDelta;
+        const newPanY = pinchRef.current.pan.y + dy - focalY * zoomDelta;
+
+        setZoom(newZoom);
+        setPan({ x: newPanX, y: newPanY });
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        pinchRef.current = null;
+      }
+    };
+
+    // Store for later use in overlay attachment effect
+    pinchHandlersRef.current = { onTouchStart, onTouchMove, onTouchEnd };
+
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd, { passive: true });
+    el.addEventListener("touchcancel", onTouchEnd, { passive: true });
+
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
+      pinchHandlersRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Attach same pinch handlers to the SVG overlay once it mounts (pageOrder changes trigger render)
+  useEffect(() => {
+    const svg = overlay.current;
+    const h = pinchHandlersRef.current;
+    if (!svg || !h) return;
+    svg.addEventListener("touchstart", h.onTouchStart, { passive: false });
+    svg.addEventListener("touchmove", h.onTouchMove, { passive: false });
+    svg.addEventListener("touchend", h.onTouchEnd, { passive: true });
+    svg.addEventListener("touchcancel", h.onTouchEnd, { passive: true });
+    return () => {
+      svg.removeEventListener("touchstart", h.onTouchStart);
+      svg.removeEventListener("touchmove", h.onTouchMove);
+      svg.removeEventListener("touchend", h.onTouchEnd);
+      svg.removeEventListener("touchcancel", h.onTouchEnd);
+    };
+  // Runs whenever pageOrder changes (which causes the SVG to mount/unmount)
+  }, [pageOrder]);
 
   useEffect(() => {
     if (!canvas.current || !currentPage) return;
@@ -977,6 +1089,11 @@ export function ViewerClient() {
                   e.currentTarget.setPointerCapture(e.pointerId);
                 }
               }}
+              onDoubleClick={() => {
+                // Double-click / double-tap on stage background → reset zoom & pan
+                setZoom(1.0);
+                setPan({ x: 0, y: 0 });
+              }}
               onPointerMove={e => {
                 if (isPanning) {
                   setPan({ x: e.clientX - panStart.current.x, y: e.clientY - panStart.current.y });
@@ -998,7 +1115,7 @@ export function ViewerClient() {
                 style={{
                   transform: zoom !== 1 || pan.x !== 0 || pan.y !== 0 ? `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)` : undefined,
                   transformOrigin: "center center",
-                  transition: isPanning ? "none" : "transform 0.1s cubic-bezier(0,0,0.2,1)",
+                  transition: (isPanning || pinchRef.current) ? "none" : "transform 0.1s cubic-bezier(0,0,0.2,1)",
                 }}
               >
                 <div
