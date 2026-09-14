@@ -122,8 +122,8 @@ function PageThumbnail({ pdf, sourcePage, pageNumber, background, active, onClic
     if (!sourcePage) {
       const canvas = thumbnail.current;
       if (canvas) {
-        canvas.width = 160;
-        canvas.height = 90;
+        canvas.width = 320;
+        canvas.height = 180;
         const context = canvas.getContext("2d");
         if (context) {
           context.fillStyle = background || "#1e293b";
@@ -134,7 +134,7 @@ function PageThumbnail({ pdf, sourcePage, pageNumber, background, active, onClic
     }
     void pdf?.getPage(sourcePage).then((pdfPage: any) => {
       if (cancelled || !thumbnail.current) return;
-      const viewport = pdfPage.getViewport({ scale: 0.2 });
+      const viewport = pdfPage.getViewport({ scale: 0.38 });
       const canvas = thumbnail.current;
       canvas.width = viewport.width;
       canvas.height = viewport.height;
@@ -142,7 +142,12 @@ function PageThumbnail({ pdf, sourcePage, pageNumber, background, active, onClic
     });
     return () => { cancelled = true; };
   }, [pdf, sourcePage, pageNumber, background]);
-  return <button className={`page-thumb ${active ? "active" : ""}`} onClick={onClick} aria-label={`Go to page ${pageNumber}`}><canvas ref={thumbnail} /><span>{pageNumber}</span></button>;
+  return (
+    <button className={`page-thumb ${active ? "active" : ""}`} onClick={onClick} aria-label={`Go to page ${pageNumber}`}>
+      <canvas ref={thumbnail} />
+      <span className="page-thumb-num">Page {pageNumber}</span>
+    </button>
+  );
 }
 
 
@@ -191,6 +196,8 @@ export function ViewerClient() {
   const [eraserSize, setEraserSize] = useState(24);
   const [isErasing, setIsErasing] = useState(false);
   const [eraserPos, setEraserPos] = useState<Point | null>(null);
+  const [activeDropdown, setActiveDropdown] = useState<"pen" | "eraser" | "shape" | "line" | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const triggerPageCounter = () => {
     setShowPageCounter(true);
@@ -1085,7 +1092,7 @@ export function ViewerClient() {
       {/* Hidden file input for images */}
       <input ref={imageInputRef} type="file" hidden accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) handleImageFile(f); e.target.value = ""; }} />
 
-      <header className="viewer-header">
+      <header className="viewer-header" onPointerDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
         <a href="/dashboard" className="viewer-brand">← MAPLES <span>ACADEMY</span></a>
         <div className="document-title">
           <strong>{documentName}</strong>
@@ -1096,6 +1103,46 @@ export function ViewerClient() {
             </small>
           )}
         </div>
+
+        {/* Permanent Undo & Redo Controls */}
+        <div className="permanent-undo-redo">
+          <button
+            type="button"
+            className="undo-btn"
+            title="Undo (Ctrl+Z)"
+            disabled={!history.length}
+            onClick={() => {
+              if (history.length) {
+                const previous = history.at(-1)!;
+                setFuture(current => [annotations, ...current]);
+                setAnnotations(previous);
+                setHistory(current => current.slice(0, -1));
+                void saveCloud(previous);
+              }
+            }}
+          >
+            ↶ Undo
+          </button>
+          <button
+            type="button"
+            className="redo-btn"
+            title="Redo (Ctrl+Y)"
+            disabled={!future.length}
+            onClick={() => {
+              if (future.length) {
+                const next = future[0];
+                setHistory(current => [...current, annotations]);
+                setAnnotations(next);
+                setFuture(current => current.slice(1));
+                void saveCloud(next);
+              }
+            }}
+          >
+            ↷ Redo
+          </button>
+        </div>
+
+        <button type="button" className="secondary" onClick={() => setSettingsOpen(true)} title="Open Presentation & Canvas Settings">⚙️ Settings</button>
         <button type="button" className="secondary" onClick={() => initBlankDocument("New 16:9 Slide Presentation")}>＋ New Blank Presentation</button>
         <label className="upload">Open PDF<input type="file" hidden accept=".pdf,application/pdf" onChange={event => event.target.files?.[0] && open(event.target.files[0]).catch(error => setStatus(error.message))} /></label>
         <button onClick={() => setPresenting(value => !value)}>{presenting ? "Exit presentation" : "Present"}</button>
@@ -1210,6 +1257,12 @@ export function ViewerClient() {
                     onDragOver={e => e.preventDefault()}
                     onDrop={handleCanvasDrop}
                     onPointerDown={event => {
+                      // Canvas pointer touch: dismiss open floating popups/dropdowns & auto-collapse toolbar
+                      setPropertiesOpen(false);
+                      setActiveDropdown(null);
+                      setZoomMenuOpen(false);
+                      setDockCollapsed(true);
+
                       const pt = point(event);
                       if (tool.includes("eraser")) {
                         setIsErasing(true);
@@ -1393,32 +1446,191 @@ export function ViewerClient() {
                 ▼ Hide Toolbar
               </button>
               <div className="tool-group">
-                {tools.map(item => (
+                {/* 1. Select */}
+                <button
+                  type="button"
+                  className={tool === "select" ? "tool-active" : ""}
+                  title="Select & Edit Objects"
+                  onClick={() => { setTool("select"); setActiveDropdown(null); setPropertiesOpen(!!selectedAnnotation); }}
+                >
+                  <span>↖</span>
+                  <small>Select</small>
+                </button>
+
+                {/* 2. Pan */}
+                <button
+                  type="button"
+                  className={tool === "pan" ? "tool-active" : ""}
+                  title="Pan Presentation Canvas"
+                  onClick={() => { setTool("pan"); setActiveDropdown(null); setPropertiesOpen(false); }}
+                >
+                  <span>✋</span>
+                  <small>Pan</small>
+                </button>
+
+                {/* 3. Drawing / Pens Group */}
+                <div style={{ position: "relative" }}>
                   <button
-                    className={tool === item.id ? "tool-active" : ""}
-                    key={item.id}
-                    title={item.label}
-                    aria-label={item.label}
+                    type="button"
+                    className={drawingTypes.includes(tool as AnnotationType) ? "tool-active" : ""}
+                    title="Pencil & Brushes"
                     onClick={() => {
-                      if (item.id === "image") {
-                        imageInputRef.current?.click();
-                        return;
+                      if (!drawingTypes.includes(tool as AnnotationType)) {
+                        setTool("ink");
+                        setOpacity(1.0);
+                        if (width > 8) setWidth(3);
                       }
-                      setTool(item.id);
-                      if (item.id === "calligraphy" || item.id === "ink") {
-                        setOpacity(1.0); // 100% solid opacity for dark clear handwriting
-                        if (width > 8) setWidth(3); // 3px precision line thickness
-                      } else if (item.id === "highlighter") {
-                        setOpacity(0.45); // semi-transparent for text highlighting
-                        if (width < 8) setWidth(14);
-                      }
-                      setPropertiesOpen(item.id !== "pan");
+                      setActiveDropdown(activeDropdown === "pen" ? null : "pen");
+                      setPropertiesOpen(true);
                     }}
                   >
-                    <span>{item.icon}</span>
-                    <small>{item.label}</small>
+                    <span>{tool === "calligraphy" ? "✒️" : tool === "highlighter" ? "▰" : "✎"}</span>
+                    <small>{tool === "calligraphy" ? "Calli" : tool === "highlighter" ? "Highlight" : "Pen"} ▾</small>
                   </button>
-                ))}
+
+                  {activeDropdown === "pen" && (
+                    <div className="tool-dropdown-menu" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+                      <button
+                        type="button"
+                        className={tool === "ink" ? "active" : ""}
+                        onClick={() => { setTool("ink"); setOpacity(1.0); if (width > 8) setWidth(3); setActiveDropdown(null); setPropertiesOpen(true); }}
+                      >
+                        ✎ Pen
+                      </button>
+                      <button
+                        type="button"
+                        className={tool === "calligraphy" ? "active" : ""}
+                        onClick={() => { setTool("calligraphy"); setOpacity(1.0); if (width > 8) setWidth(3); setActiveDropdown(null); setPropertiesOpen(true); }}
+                      >
+                        ✒️ Calli
+                      </button>
+                      <button
+                        type="button"
+                        className={tool === "highlighter" ? "active" : ""}
+                        onClick={() => { setTool("highlighter"); setOpacity(0.45); if (width < 8) setWidth(14); setActiveDropdown(null); setPropertiesOpen(true); }}
+                      >
+                        ▰ Highlight
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. Erasers Group */}
+                <div style={{ position: "relative" }}>
+                  <button
+                    type="button"
+                    className={tool.includes("eraser") ? "tool-active" : ""}
+                    title="Eraser Tools"
+                    onClick={() => {
+                      if (!tool.includes("eraser")) {
+                        setTool("partial-eraser");
+                      }
+                      setActiveDropdown(activeDropdown === "eraser" ? null : "eraser");
+                      setPropertiesOpen(true);
+                    }}
+                  >
+                    <span>{tool === "stroke-eraser" ? "⌫" : "🧹"}</span>
+                    <small>{tool === "stroke-eraser" ? "Object" : "Eraser"} ▾</small>
+                  </button>
+
+                  {activeDropdown === "eraser" && (
+                    <div className="tool-dropdown-menu" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
+                      <button
+                        type="button"
+                        className={tool === "partial-eraser" ? "active" : ""}
+                        onClick={() => { setTool("partial-eraser"); setActiveDropdown(null); setPropertiesOpen(true); }}
+                      >
+                        🧹 Pixel Eraser
+                      </button>
+                      <button
+                        type="button"
+                        className={tool === "stroke-eraser" ? "active" : ""}
+                        onClick={() => { setTool("stroke-eraser"); setActiveDropdown(null); setPropertiesOpen(true); }}
+                      >
+                        ⌫ Object Eraser
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 5. Shapes Dropdown */}
+                <div style={{ position: "relative" }}>
+                  <button
+                    type="button"
+                    className={["rectangle", "ellipse", "triangle", "diamond", "star", "cloud", "graph"].includes(tool) ? "tool-active" : ""}
+                    title="Geometric Shapes"
+                    onClick={() => {
+                      if (!["rectangle", "ellipse", "triangle", "diamond", "star", "cloud", "graph"].includes(tool)) {
+                        setTool("rectangle");
+                      }
+                      setActiveDropdown(activeDropdown === "shape" ? null : "shape");
+                      setPropertiesOpen(true);
+                    }}
+                  >
+                    <span>{tool === "ellipse" ? "○" : tool === "triangle" ? "△" : tool === "diamond" ? "◇" : tool === "star" ? "☆" : tool === "cloud" ? "☁" : tool === "graph" ? "📈" : "□"}</span>
+                    <small>Shapes ▾</small>
+                  </button>
+
+                  {activeDropdown === "shape" && (
+                    <div className="tool-dropdown-menu" style={{ gridTemplateColumns: "repeat(4, 1fr)", width: "260px" }}>
+                      <button type="button" className={tool === "rectangle" ? "active" : ""} onClick={() => { setTool("rectangle"); setActiveDropdown(null); setPropertiesOpen(true); }}>□ Rect</button>
+                      <button type="button" className={tool === "ellipse" ? "active" : ""} onClick={() => { setTool("ellipse"); setActiveDropdown(null); setPropertiesOpen(true); }}>○ Circle</button>
+                      <button type="button" className={tool === "triangle" ? "active" : ""} onClick={() => { setTool("triangle"); setActiveDropdown(null); setPropertiesOpen(true); }}>△ Triangle</button>
+                      <button type="button" className={tool === "diamond" ? "active" : ""} onClick={() => { setTool("diamond"); setActiveDropdown(null); setPropertiesOpen(true); }}>◇ Diamond</button>
+                      <button type="button" className={tool === "star" ? "active" : ""} onClick={() => { setTool("star"); setActiveDropdown(null); setPropertiesOpen(true); }}>☆ Star</button>
+                      <button type="button" className={tool === "cloud" ? "active" : ""} onClick={() => { setTool("cloud"); setActiveDropdown(null); setPropertiesOpen(true); }}>☁ Cloud</button>
+                      <button type="button" className={tool === "graph" ? "active" : ""} onClick={() => { setTool("graph"); setActiveDropdown(null); setPropertiesOpen(true); }}>📈 Graph</button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 6. Lines Dropdown */}
+                <div style={{ position: "relative" }}>
+                  <button
+                    type="button"
+                    className={["line", "arrow"].includes(tool) ? "tool-active" : ""}
+                    title="Lines & Connectors"
+                    onClick={() => {
+                      if (!["line", "arrow"].includes(tool)) {
+                        setTool("line");
+                      }
+                      setActiveDropdown(activeDropdown === "line" ? null : "line");
+                      setPropertiesOpen(true);
+                    }}
+                  >
+                    <span>{tool === "arrow" ? "➜" : "／"}</span>
+                    <small>Lines ▾</small>
+                  </button>
+
+                  {activeDropdown === "line" && (
+                    <div className="tool-dropdown-menu" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
+                      <button type="button" className={tool === "line" ? "active" : ""} onClick={() => { setTool("line"); setActiveDropdown(null); setPropertiesOpen(true); }}>／ Line</button>
+                      <button type="button" className={tool === "arrow" ? "active" : ""} onClick={() => { setTool("arrow"); setActiveDropdown(null); setPropertiesOpen(true); }}>➜ Arrow</button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 7. Text */}
+                <button
+                  type="button"
+                  className={tool === "text" ? "tool-active" : ""}
+                  title="Insert Text"
+                  onClick={() => { setTool("text"); setActiveDropdown(null); setPropertiesOpen(true); }}
+                >
+                  <span>T</span>
+                  <small>Text</small>
+                </button>
+
+                {/* 8. Image */}
+                <button
+                  type="button"
+                  className={tool === "image" ? "tool-active" : ""}
+                  title="Insert Image"
+                  onClick={() => { imageInputRef.current?.click(); setActiveDropdown(null); }}
+                >
+                  <span>🖼</span>
+                  <small>Image</small>
+                </button>
               </div>
 
               {propertiesOpen && (
@@ -1433,28 +1645,6 @@ export function ViewerClient() {
 
                   {tool.includes("eraser") && (
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem", width: "100%" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                        <strong style={{ fontSize: "0.72rem" }}>Eraser Mode:</strong>
-                        <div className="stroke-presets">
-                          <button
-                            type="button"
-                            className={`stroke-btn ${tool === "stroke-eraser" ? "active" : ""}`}
-                            onClick={() => setTool("stroke-eraser")}
-                            title="Erases full strokes or objects when touched"
-                          >
-                            ⌫ Object Eraser
-                          </button>
-                          <button
-                            type="button"
-                            className={`stroke-btn ${tool === "partial-eraser" ? "active" : ""}`}
-                            onClick={() => setTool("partial-eraser")}
-                            title="Precise pixel cutter for ink strokes"
-                          >
-                            🧹 Eraser
-                          </button>
-                        </div>
-                      </div>
-
                       <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
                         <span style={{ fontSize: "0.72rem", fontWeight: 600 }}>Eraser Size ({eraserSize}px)</span>
                         <div className="stroke-presets">
@@ -1472,7 +1662,7 @@ export function ViewerClient() {
                         <input aria-label="Eraser size" type="range" min="5" max="100" value={eraserSize} onChange={e => setEraserSize(+e.target.value)} />
                       </label>
 
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap", paddingTop: "0.3rem", borderTop: "1px solid #e2e8f0" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap", paddingTop: "0.3rem", borderTop: "1px solid rgba(255,255,255,0.15)" }}>
                         <strong style={{ fontSize: "0.72rem" }}>Clear Options:</strong>
                         <button type="button" onClick={clearDrawingsOnPage} title="Clear all freehand ink/pen drawings on this page">
                           ✏️ Clear Ink
@@ -1646,11 +1836,10 @@ export function ViewerClient() {
                 </div>
               )}
 
-              <div className="command-group">
-                <button title="Undo (Ctrl+Z)" onClick={() => { if (history.length) { const previous = history.at(-1)!; setFuture(current => [annotations, ...current]); setAnnotations(previous); setHistory(current => current.slice(0, -1)); void saveCloud(previous); } }}>↶</button>
-                <button title="Redo (Ctrl+Y)" onClick={() => { if (future.length) { const next = future[0]; setHistory(current => [...current, annotations]); setAnnotations(next); setFuture(current => current.slice(1)); void saveCloud(next); } }}>↷</button>
-                <button className="clear-action" onClick={() => { if (window.confirm("Clear all annotations from this page?")) commit(annotations.filter(annotation => annotation.pageNumber !== page)); }}>Clear page</button>
-                <button className="export-button" onClick={async () => { const blob = await pdfExporter.export(source, annotations, pageOrder); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "annotated-lesson.pdf"; link.click(); }}>Export PDF</button>
+              <div className="command-group" onPointerDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
+                <button title="Undo (Ctrl+Z)" onClick={() => { if (history.length) { const previous = history.at(-1)!; setFuture(current => [annotations, ...current]); setAnnotations(previous); setHistory(current => current.slice(0, -1)); void saveCloud(previous); } }}>↶ Undo</button>
+                <button title="Redo (Ctrl+Y)" onClick={() => { if (future.length) { const next = future[0]; setHistory(current => [...current, annotations]); setAnnotations(next); setFuture(current => current.slice(1)); void saveCloud(next); } }}>↷ Redo</button>
+                <button title="Open Presentation & Canvas Settings" onClick={() => setSettingsOpen(true)}>⚙️ Settings</button>
               </div>
             </div>
           </section>
@@ -1693,6 +1882,88 @@ export function ViewerClient() {
               <button className="primary" type="submit">Add text</button>
             </div>
           </form>
+        </div>
+      )}
+      {settingsOpen && (
+        <div className="settings-modal-backdrop" onClick={() => setSettingsOpen(false)}>
+          <div className="settings-modal-card" onClick={e => e.stopPropagation()}>
+            <div className="settings-modal-header">
+              <h3>⚙️ Presentation & Canvas Settings</h3>
+              <button type="button" className="close-btn" onClick={() => setSettingsOpen(false)}>✕</button>
+            </div>
+
+            <div className="settings-modal-body">
+              {/* Section 1: Clear Actions */}
+              <div className="settings-section">
+                <h4>🧹 Clear Actions</h4>
+                <div className="settings-btn-row">
+                  <button type="button" onClick={() => { clearDrawingsOnPage(); setSettingsOpen(false); }}>
+                    ✏️ Clear Ink
+                  </button>
+                  <button type="button" onClick={() => { clearShapesOnPage(); setSettingsOpen(false); }}>
+                    📐 Clear Shapes
+                  </button>
+                  <button type="button" className="danger-btn" onClick={() => { clearAllOnPage(); setSettingsOpen(false); }}>
+                    🗑️ Clear Entire Page
+                  </button>
+                </div>
+              </div>
+
+              {/* Section 2: Canvas Background & Adjustments */}
+              <div className="settings-section">
+                <h4>🎨 Slide Background</h4>
+                <div className="bg-color-swatches">
+                  {[
+                    { label: "Dark Slate", color: "#1e293b" },
+                    { label: "Clean White", color: "#ffffff" },
+                    { label: "Deep Blue", color: "#1e3a8a" },
+                    { label: "Board Green", color: "#14532d" },
+                    { label: "Midnight", color: "#0f172a" },
+                  ].map(bg => (
+                    <button
+                      key={bg.color}
+                      type="button"
+                      className={`bg-swatch ${currentPage?.background === bg.color ? "active" : ""}`}
+                      style={{ background: bg.color }}
+                      onClick={() => changePageBackground(bg.color)}
+                      title={bg.label}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Section 3: View & Document Controls */}
+              <div className="settings-section">
+                <h4>📄 Document & View Controls</h4>
+                <div className="settings-btn-row">
+                  <button
+                    type="button"
+                    className="primary-btn"
+                    onClick={async () => {
+                      const blob = await pdfExporter.export(source, annotations, pageOrder);
+                      const link = document.createElement("a");
+                      link.href = URL.createObjectURL(blob);
+                      link.download = `${documentName.replace(/\s+/g, "_")}.pdf`;
+                      link.click();
+                      setSettingsOpen(false);
+                    }}
+                  >
+                    📥 Export Presentation as PDF
+                  </button>
+                  <button type="button" onClick={() => { setZoom(1.0); setPan({ x: 0, y: 0 }); setSettingsOpen(false); }}>
+                    ⛶ Reset Zoom (100%)
+                  </button>
+                  <button type="button" onClick={() => { toggleFullscreen(); setSettingsOpen(false); }}>
+                    {isFullscreen ? "🗗 Exit Fullscreen" : "⛶ Fullscreen"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="settings-modal-footer">
+              <button type="button" onClick={() => setSettingsOpen(false)}>Done</button>
+            </div>
+          </div>
         </div>
       )}
     </main>
