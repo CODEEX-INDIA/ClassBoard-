@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, type PointerEvent, type DragEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent, type DragEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { importDocument } from "../../lib/importers";
 import { pdfExporter } from "../../lib/export/pdf-exporter";
@@ -11,7 +11,6 @@ import type { Annotation, AnnotationType, Point } from "../../types/annotation";
 import { AnnotationShape, TransformBoundingBox, type TransformHandle } from "../shapes";
 
 const strokeColors = ["#000000", "#ffffff", "#2563eb", "#dc2626", "#16a34a", "#ca8a04"];
-const fillColors = ["none", "#ffffff", "#1e293b", "#eef4ff", "#e6f4ea", "#fef7e0", "#fce8e6"];
 const strokeWidthPresets = [{ label: "Thin", val: 2 }, { label: "Med", val: 4 }, { label: "Thick", val: 10 }];
 const fontFamilies = [
   { label: "Inter / Clean", val: "Inter, system-ui, sans-serif" },
@@ -81,6 +80,99 @@ function distToSegment(p: Point, a: Point, b: Point): number {
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
 
+// ─── Ghost shape preview ──────────────────────────────────────────────────────
+// Returns the SVG path data for a dotted ghost preview of the shape being drawn.
+// Mirrors the geometry in basic-shapes.tsx / connector-shapes.tsx so the preview
+// exactly matches what will be committed on pointer-up.
+function ghostShapeD(
+  tool: string,
+  x: number, y: number, w: number, h: number
+): string {
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+
+  switch (tool) {
+    case "rectangle":
+      return `M ${x+4} ${y} H ${x+w-4} Q ${x+w} ${y} ${x+w} ${y+4} V ${y+h-4} Q ${x+w} ${y+h} ${x+w-4} ${y+h} H ${x+4} Q ${x} ${y+h} ${x} ${y+h-4} V ${y+4} Q ${x} ${y} ${x+4} ${y} Z`;
+    case "ellipse":
+      return `M ${cx} ${y} A ${w/2} ${h/2} 0 1 1 ${cx-0.001} ${y} Z`;
+    case "triangle":
+      return `M ${cx} ${y} L ${x+w} ${y+h} L ${x} ${y+h} Z`;
+    case "right-triangle":
+      return `M ${x} ${y} L ${x+w} ${y+h} L ${x} ${y+h} Z`;
+    case "diamond":
+      return `M ${cx} ${y} L ${x+w} ${cy} L ${cx} ${y+h} L ${x} ${cy} Z`;
+    case "parallelogram": {
+      const off = w * 0.2;
+      return `M ${x+off} ${y} L ${x+w} ${y} L ${x+w-off} ${y+h} L ${x} ${y+h} Z`;
+    }
+    case "pentagon": {
+      const pts = Array.from({length:5},(_,i)=>{
+        const a = -Math.PI/2+(i*2*Math.PI)/5;
+        return `${cx+Math.cos(a)*w/2},${cy+Math.sin(a)*h/2}`;
+      });
+      return `M ${pts.join(" L ")} Z`;
+    }
+    case "hexagon": {
+      const pts = Array.from({length:6},(_,i)=>{
+        const a = (i*Math.PI)/3;
+        return `${cx+Math.cos(a)*w/2},${cy+Math.sin(a)*h/2}`;
+      });
+      return `M ${pts.join(" L ")} Z`;
+    }
+    case "octagon": {
+      const pts = Array.from({length:8},(_,i)=>{
+        const a = -Math.PI/8+(i*Math.PI)/4;
+        return `${cx+Math.cos(a)*w/2},${cy+Math.sin(a)*h/2}`;
+      });
+      return `M ${pts.join(" L ")} Z`;
+    }
+    case "star": {
+      const pts = Array.from({length:10},(_,i)=>{
+        const r = i%2 ? Math.min(w,h)*0.2 : Math.min(w,h)*0.48;
+        const a = -Math.PI/2+(i*Math.PI)/5;
+        return `${cx+Math.cos(a)*r},${cy+Math.sin(a)*r}`;
+      });
+      return `M ${pts.join(" L ")} Z`;
+    }
+    case "heart": {
+      const hw = w; const hh = h;
+      return `M ${x+hw*0.5} ${y+hh*0.3}
+        C ${x+hw*0.5} ${y+hh*0.1} ${x+hw*0.15} ${y} ${x} ${y+hh*0.2}
+        C ${x-hw*0.05} ${y+hh*0.45} ${x+hw*0.3} ${y+hh*0.65} ${x+hw*0.5} ${y+hh}
+        C ${x+hw*0.7} ${y+hh*0.65} ${x+hw*1.05} ${y+hh*0.45} ${x+hw} ${y+hh*0.2}
+        C ${x+hw*0.85} ${y} ${x+hw*0.5} ${y+hh*0.1} ${x+hw*0.5} ${y+hh*0.3} Z`;
+    }
+    case "cross": {
+      const t = w * 0.28;
+      return [
+        `${cx-t/2},${y}`,`${cx+t/2},${y}`,
+        `${cx+t/2},${cy-t/2}`,`${x+w},${cy-t/2}`,
+        `${x+w},${cy+t/2}`,`${cx+t/2},${cy+t/2}`,
+        `${cx+t/2},${y+h}`,`${cx-t/2},${y+h}`,
+        `${cx-t/2},${cy+t/2}`,`${x},${cy+t/2}`,
+        `${x},${cy-t/2}`,`${cx-t/2},${cy-t/2}`,
+      ].reduce((acc,p,i)=>acc+(i===0?`M ${p}`:`L ${p}`), '')+" Z";
+    }
+    case "cloud":
+      return `M ${x} ${y+h*0.55} Q ${x} ${y+h} ${cx} ${y+h} Q ${x+w} ${y+h} ${x+w} ${y+h*0.55} Q ${x+w} ${y+h*0.22} ${cx} ${y+h*0.22} Q ${x+w*0.62} ${y} ${x+w*0.5} ${y+h*0.22} Q ${x+w*0.35} ${y+h*0.06} ${x+w*0.25} ${y+h*0.3} Q ${x} ${y+h*0.3} ${x} ${y+h*0.55} Z`;
+    case "cylinder": {
+      const ry2 = h * 0.14;
+      return `M ${x} ${y+ry2} A ${w/2} ${ry2} 0 0 1 ${x+w} ${y+ry2} L ${x+w} ${y+h-ry2} A ${w/2} ${ry2} 0 0 1 ${x} ${y+h-ry2} Z M ${x} ${y+ry2} A ${w/2} ${ry2} 0 0 0 ${x+w} ${y+ry2}`;
+    }
+    case "graph":
+      return `M ${x+4} ${y} H ${x+w-4} Q ${x+w} ${y} ${x+w} ${y+4} V ${y+h-4} Q ${x+w} ${y+h} ${x+w-4} ${y+h} H ${x+4} Q ${x} ${y+h} ${x} ${y+h-4} V ${y+4} Q ${x} ${y} ${x+4} ${y} Z`;
+    case "line":
+      return `M ${x} ${y} L ${x+w} ${y+h}`;
+    case "arrow":
+      return `M ${x} ${y} L ${x+w} ${y+h}`;
+    case "text":
+      return `M ${x+4} ${y} H ${x+w-4} Q ${x+w} ${y} ${x+w} ${y+4} V ${y+h-4} Q ${x+w} ${y+h} ${x+w-4} ${y+h} H ${x+4} Q ${x} ${y+h} ${x} ${y+h-4} V ${y+4} Q ${x} ${y} ${x+4} ${y} Z`;
+    default:
+      return `M ${x} ${y} H ${x+w} V ${y+h} H ${x} Z`;
+  }
+}
+
 const shortTitle = (filename: string) => {
   const extension = filename.match(/\.[^.]+$/)?.[0] ?? "";
   const base = filename.slice(0, filename.length - extension.length).replace(/\.+$/, "").trim();
@@ -138,6 +230,7 @@ function ConfirmDialog({ message, onConfirm, onCancel }: { message: string; onCo
 export function ViewerClient() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const overlay = useRef<SVGSVGElement>(null);
+  const pageEl = useRef<HTMLDivElement>(null);   // ref to .page div for coordinate calc
   const stage = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const renderTask = useRef<{ cancel: () => void; promise: Promise<void> } | null>(null);
@@ -157,7 +250,6 @@ export function ViewerClient() {
   const [draft, setDraft] = useState<Point[] | null>(null);
   const [selectedId, setSelectedId] = useState<string>();
   const [color, setColor] = useState("#2563eb");
-  const [fillColor, setFillColor] = useState("#eef4ff");
   const [fontFamily, setFontFamily] = useState("Inter, system-ui, sans-serif");
   const [fontSize, setFontSize] = useState(32);
   const [opacity, setOpacity] = useState(1.0);
@@ -170,7 +262,6 @@ export function ViewerClient() {
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [dockCollapsed, setDockCollapsed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [textPoints, setTextPoints] = useState<Point[] | null>(null);
   const [textValue, setTextValue] = useState("");
   const [editingId, setEditingId] = useState<string>();
@@ -185,7 +276,6 @@ export function ViewerClient() {
   const [autoHideDock, setAutoHideDock] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   // Settings extras
-  const [showGrid, setShowGrid] = useState(false);
   const [gridType, setGridType] = useState<"dots" | "lines" | "none">("none");
   const [smoothTransition, setSmoothTransition] = useState(true);
   const [laserPointer, setLaserPointer] = useState(false);
@@ -193,6 +283,25 @@ export function ViewerClient() {
   const [renamingDoc, setRenamingDoc] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [settingsTab, setSettingsTab] = useState<"canvas" | "tools" | "document" | "view">("canvas");
+
+  // ─── Draggable dock position ────────────────────────────────────────────────
+  const [dockPos, setDockPos] = useState<{ x: number; y: number } | null>(null);
+  const dockDragRef = useRef<{
+    startX: number; startY: number;
+    originX: number; originY: number;
+    dragging: boolean;
+  } | null>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+
+  // ─── Shapes panel (separate draggable floating window) ─────────────────────
+  const [shapesPanelOpen, setShapesPanelOpen] = useState(false);
+  const [shapesPanelPos, setShapesPanelPos] = useState<{ x: number; y: number } | null>(null);
+  const shapesPanelDragRef = useRef<{
+    startX: number; startY: number;
+    originX: number; originY: number;
+    dragging: boolean;
+  } | null>(null);
+  const shapesPanelRef = useRef<HTMLDivElement>(null);
   // Inline confirm state
   const [confirmState, setConfirmState] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
@@ -217,6 +326,7 @@ export function ViewerClient() {
       if (e.key === "Escape") {
         setActiveDropdown(null);
         setZoomMenuOpen(false);
+        setShapesPanelOpen(false);
       }
     };
     document.addEventListener("keydown", onKeyEscape);
@@ -381,13 +491,6 @@ export function ViewerClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  useEffect(() => {
-    if (!stage.current) return;
-    const observer = new ResizeObserver(([entry]) => setStageSize({ width: entry.contentRect.width, height: entry.contentRect.height }));
-    observer.observe(stage.current);
-    return () => observer.disconnect();
-  }, []);
-
   // ─── Pinch-to-zoom ──────────────────────────────────────────────────────────
   const pinchHandlersRef = useRef<{ onTouchStart: (e: TouchEvent) => void; onTouchMove: (e: TouchEvent) => void; onTouchEnd: (e: TouchEvent) => void } | null>(null);
 
@@ -470,12 +573,25 @@ export function ViewerClient() {
       const renderedPage = await pdf.getPage(currentPage.sourcePage);
       if (cancelled) return;
       const baseViewport = renderedPage.getViewport({ scale: 1 });
-      const availableWidth = Math.max(320, stageSize.width - 32);
-      const availableHeight = Math.max(240, stageSize.height - 32);
-      const scale = Math.min(availableWidth / baseViewport.width, availableHeight / baseViewport.height);
-      const displayScale = Math.max(0.25, scale);
-      const pixelRatio = typeof window !== "undefined" ? Math.max(2, window.devicePixelRatio || 1) : 2;
-      const renderViewport = renderedPage.getViewport({ scale: displayScale * pixelRatio });
+
+      // ── High-quality render ────────────────────────────────────────────────
+      // We render at a fixed high resolution (equivalent to a 2560-px-wide
+      // display) regardless of the current stage size.  The canvas is scaled
+      // down to fit by CSS (width/height 100%), so visual quality never
+      // degrades when the window is resized or the user zooms.
+      // We also no longer put stageSize in the dependency array, which
+      // previously caused a re-render (and quality loss) on every resize.
+      const TARGET_WIDTH = 2560; // physical pixel target width
+      const pixelRatio = typeof window !== "undefined"
+        ? Math.max(2, window.devicePixelRatio || 1)
+        : 2;
+      // Scale to reach TARGET_WIDTH, but never less than 2× native (crisp on
+      // all screens) and never more than 8× (avoid runaway memory usage).
+      const highResScale = Math.min(
+        8,
+        Math.max(pixelRatio, TARGET_WIDTH / (baseViewport.width || 1))
+      );
+      const renderViewport = renderedPage.getViewport({ scale: highResScale });
       target.width = renderViewport.width;
       target.height = renderViewport.height;
       target.style.aspectRatio = `${baseViewport.width}/${baseViewport.height}`;
@@ -489,7 +605,7 @@ export function ViewerClient() {
       } finally {
         if (renderTask.current?.promise === currentRender.promise) renderTask.current = null;
       }
-      if (!cancelled && overlay.current) overlay.current.setAttribute("viewBox", "0 0 1000 1000");
+      if (!cancelled && overlay.current) overlay.current.setAttribute("viewBox", "-300 -300 1600 1600");
     });
     renderQueue.current = operation.catch(() => undefined);
     void operation.catch(err => { if (!cancelled) setStatus(err instanceof Error ? err.message : "Page render failed"); });
@@ -497,7 +613,7 @@ export function ViewerClient() {
       cancelled = true;
       if (renderTask.current) { try { renderTask.current.cancel(); } catch {} renderTask.current = null; }
     };
-  }, [pdf, currentPage, page, stageSize]);
+  }, [pdf, currentPage, page]);
 
   // ─── Keyboard Shortcuts ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -546,6 +662,54 @@ export function ViewerClient() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ─── Draggable dock — pointer/touch handlers ─────────────────────────────
+  // We attach global pointermove/pointerup so dragging works even if the
+  // cursor leaves the grip handle during fast movement.
+  useEffect(() => {
+    const onPointerMove = (e: globalThis.PointerEvent) => {
+      // ── main dock drag ──
+      if (dockDragRef.current?.dragging) {
+        e.preventDefault();
+        const dx = e.clientX - dockDragRef.current.startX;
+        const dy = e.clientY - dockDragRef.current.startY;
+        const rawX = dockDragRef.current.originX + dx;
+        const rawY = dockDragRef.current.originY + dy;
+        const dock = dockRef.current;
+        const dockW = dock?.offsetWidth ?? 400;
+        const dockH = dock?.offsetHeight ?? 64;
+        setDockPos({
+          x: Math.max(8, Math.min(window.innerWidth - dockW - 8, rawX)),
+          y: Math.max(8, Math.min(window.innerHeight - dockH - 8, rawY)),
+        });
+      }
+      // ── shapes panel drag ──
+      if (shapesPanelDragRef.current?.dragging) {
+        e.preventDefault();
+        const dx = e.clientX - shapesPanelDragRef.current.startX;
+        const dy = e.clientY - shapesPanelDragRef.current.startY;
+        const rawX = shapesPanelDragRef.current.originX + dx;
+        const rawY = shapesPanelDragRef.current.originY + dy;
+        const panel = shapesPanelRef.current;
+        const w = panel?.offsetWidth ?? 280;
+        const h = panel?.offsetHeight ?? 400;
+        setShapesPanelPos({
+          x: Math.max(8, Math.min(window.innerWidth - w - 8, rawX)),
+          y: Math.max(8, Math.min(window.innerHeight - h - 8, rawY)),
+        });
+      }
+    };
+    const onPointerUp = () => {
+      if (dockDragRef.current) dockDragRef.current.dragging = false;
+      if (shapesPanelDragRef.current) shapesPanelDragRef.current.dragging = false;
+    };
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
+    window.addEventListener("pointerup", onPointerUp);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
   }, []);
 
   const saveCloud = async (next: Annotation[], customPageOrder?: ViewerPage[], targetDocId?: string) => {
@@ -665,9 +829,15 @@ export function ViewerClient() {
     await loadCloudDocument(record);
   };
 
+  // Converts a pointer event to normalised 0-1 coordinates relative to the
+  // SLIDE (page element), not the full SVG overlay.  The SVG extends beyond
+  // the page so we must use the page rect as the reference.
   const point = (e: PointerEvent): Point => {
-    const rect = overlay.current!.getBoundingClientRect();
-    return normalizePoint({ x: e.clientX - rect.left, y: e.clientY - rect.top }, { width: rect.width, height: rect.height });
+    const rect = (pageEl.current ?? overlay.current!).getBoundingClientRect();
+    return normalizePoint(
+      { x: e.clientX - rect.left, y: e.clientY - rect.top },
+      { width: rect.width, height: rect.height }
+    );
   };
 
   // FIX #1: text tool now opens dialog when user draws/taps
@@ -767,7 +937,7 @@ export function ViewerClient() {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
     if (file?.type.startsWith("image/")) {
-      const rect = overlay.current!.getBoundingClientRect();
+      const rect = (pageEl.current ?? overlay.current!).getBoundingClientRect();
       handleImageFile(file, normalizePoint({ x: e.clientX - rect.left, y: e.clientY - rect.top }, { width: rect.width, height: rect.height }));
     }
   };
@@ -942,12 +1112,6 @@ export function ViewerClient() {
 
   const isErrorStatus = status.toLowerCase().includes("failed") || status.toLowerCase().includes("unavailable") || status.toLowerCase().includes("error");
 
-  // ─── Fill color value fix #16 ────────────────────────────────────────────────
-  const fillColorPickerValue = (() => {
-    const fill = selectedAnnotation?.style.fill ?? fillColor;
-    return fill === "none" ? "#ffffff" : fill;
-  })();
-
   return (
     <main className={presenting ? "viewer presenting" : "viewer"}>
       {/* Hidden file input for images */}
@@ -981,11 +1145,24 @@ export function ViewerClient() {
 
         {/* File actions group */}
         <div className="header-file-actions">
-          <button type="button" className="header-action-btn" onClick={() => initBlankDocument("New 16:9 Slide Presentation")}>＋ New</button>
-          <label className="header-action-btn upload-label">
-            Open PDF
-            <input type="file" hidden accept=".pdf,application/pdf" onChange={e => e.target.files?.[0] && open(e.target.files[0]).catch(err => setStatus(err.message))} />
-          </label>
+          <button
+            type="button"
+            className="header-action-btn header-export-btn"
+            title="Export presentation as PDF"
+            onClick={async () => {
+              try {
+                const blob = await pdfExporter.export(source, annotations, pageOrder);
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob);
+                link.download = `${documentName.replace(/\s+/g, "_")}.pdf`;
+                link.click();
+              } catch (err) {
+                setStatus(err instanceof Error ? err.message : "Export failed");
+              }
+            }}
+          >
+            📥 Export PDF
+          </button>
         </div>
 
         {/* Undo / Redo in header for quick access */}
@@ -1118,11 +1295,46 @@ export function ViewerClient() {
                   transition: (isPanning || pinchRef.current) ? "none" : "transform 0.1s cubic-bezier(0,0,0.2,1)",
                 }}
               >
-                <div className="page">
+                {/* smooth page fade transition wrapper */}
+                <div
+                  ref={pageEl}
+                  className={`page ${smoothTransition ? "page-smooth" : ""}`}
+                  style={{ cursor: laserPointer ? "crosshair" : undefined }}
+                >
                   <canvas ref={canvas} />
+                  {/* Grid overlay — rendered before SVG so annotations sit on top */}
+                  {gridType !== "none" && (
+                    <svg
+                      className={`grid-overlay grid-${gridType}`}
+                      viewBox="0 0 1000 1000"
+                      preserveAspectRatio="none"
+                      aria-hidden="true"
+                      style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none" }}
+                    >
+                      {gridType === "dots" && (
+                        <defs>
+                          <pattern id="dot-grid" x="0" y="0" width="50" height="50" patternUnits="userSpaceOnUse">
+                            <circle cx="0" cy="0" r="2.5" fill="rgba(255,255,255,0.25)" />
+                          </pattern>
+                        </defs>
+                      )}
+                      {gridType === "lines" && (
+                        <defs>
+                          <pattern id="line-grid" x="0" y="0" width="50" height="50" patternUnits="userSpaceOnUse">
+                            <path d="M 50 0 L 0 0 0 50" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="0.8" />
+                          </pattern>
+                        </defs>
+                      )}
+                      <rect
+                        width="1000" height="1000"
+                        fill={gridType === "dots" ? "url(#dot-grid)" : "url(#line-grid)"}
+                      />
+                    </svg>
+                  )}
                   <svg
                     ref={overlay}
-                    viewBox="0 0 1000 1000"
+                    className="drawing-overlay"
+                    viewBox="-300 -300 1600 1600"
                     preserveAspectRatio="none"
                     style={{ touchAction: "none", userSelect: "none", WebkitUserSelect: "none" }}
                     onDragOver={e => e.preventDefault()}
@@ -1147,6 +1359,8 @@ export function ViewerClient() {
                     }}
                     onPointerMove={e => {
                       const pt = point(e);
+                      // Always track position for laser pointer
+                      if (laserPointer) setEraserPos(pt);
                       if (tool.includes("eraser")) {
                         setEraserPos(pt);
                         if (isErasing || e.buttons === 1) eraseAtPoint(pt);
@@ -1156,7 +1370,7 @@ export function ViewerClient() {
                         const nativeEvt = e.nativeEvent as unknown as { getCoalescedEvents?: () => PointerEvent[] };
                         const coalesced = typeof nativeEvt.getCoalescedEvents === "function" && nativeEvt.getCoalescedEvents().length > 0
                           ? nativeEvt.getCoalescedEvents() : [e];
-                        const rect = overlay.current!.getBoundingClientRect();
+                        const rect = (pageEl.current ?? overlay.current!).getBoundingClientRect();
                         const newPoints: Point[] = [];
                         for (const cEvt of coalesced) {
                           const p = normalizePoint({ x: cEvt.clientX - rect.left, y: cEvt.clientY - rect.top }, { width: rect.width, height: rect.height });
@@ -1206,16 +1420,15 @@ export function ViewerClient() {
                         void saveCloud(final).catch(err => setStatus(err instanceof Error ? err.message : "Cloud save failed"));
                       }
                       setEraserPos(null); setIsErasing(false);
-                    }}
-                  >
+                    }}                  >
                     <defs>
                       <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
                         <path d="M0,0 L0,6 L8,3 Z" fill="context-stroke" />
                       </marker>
                     </defs>
 
-                    {/* FIX #20: shapes rendered — visible.map with explicit key and all annotation types */}
-                    {visible.map(annotation => (
+                    {/* shapes — hidden when hideAnnotations is on */}
+                    {!hideAnnotations && visible.map(annotation => (
                       <AnnotationShape
                         key={annotation.id}
                         annotation={annotation}
@@ -1232,26 +1445,120 @@ export function ViewerClient() {
                       <TransformBoundingBox annotation={selectedAnnotation} onStartTransform={startTransform} />
                     )}
 
-                    {/* FIX #19: draft path uses dynamic color via inline style, not CSS class override */}
-                    {draft && (
-                      <path
-                        d={pointsToSmoothPath(draft)}
-                        stroke={color}
-                        strokeWidth={tool === "highlighter" ? Math.max(width, 14) : width}
-                        fill="none"
-                        opacity={tool === "highlighter" ? Math.min(opacity, 0.45) : opacity}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        style={{
-                          ...(tool === "highlighter" ? { mixBlendMode: "multiply" as const } : {}),
-                          stroke: color, // explicit inline wins over CSS
-                        }}
-                        className="draft-path"
-                      />
-                    )}
+                    {/* Live draft preview ─────────────────────────────────
+                        Drawing tools → smooth live stroke.
+                        Shape/line/text tools → dotted ghost outline that
+                        exactly matches the shape that will be committed.  */}
+                    {draft && draft.length >= 2 && (() => {
+                      const isDrawing = drawingTypes.includes(tool as AnnotationType);
+                      const isLine    = tool === "line" || tool === "arrow";
+
+                      // ── Freehand stroke preview ──
+                      if (isDrawing) {
+                        return (
+                          <path
+                            d={pointsToSmoothPath(draft)}
+                            stroke={color}
+                            strokeWidth={tool === "highlighter" ? Math.max(width, 14) : width}
+                            fill="none"
+                            opacity={tool === "highlighter" ? Math.min(opacity, 0.45) : opacity}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            style={{
+                              ...(tool === "highlighter" ? { mixBlendMode: "multiply" as const } : {}),
+                              stroke: color,
+                            }}
+                            className="draft-path"
+                            pointerEvents="none"
+                          />
+                        );
+                      }
+
+                      // ── Shape / line / text ghost preview ──
+                      const draftBounds = bounds(draft);
+                      // Don't render a ghost until the user has dragged at least a little
+                      if (draftBounds.width < 0.005 && draftBounds.height < 0.005) return null;
+
+                      // Scale to SVG coordinate space (0-1000)
+                      const gx = draftBounds.x * 1000;
+                      const gy = draftBounds.y * 1000;
+                      const gw = draftBounds.width * 1000;
+                      const gh = draftBounds.height * 1000;
+
+                      // For lines/arrows draw a live endpoint-to-endpoint preview
+                      if (isLine) {
+                        const p0 = draft[0];
+                        const pN = draft[draft.length - 1];
+                        return (
+                          <g pointerEvents="none">
+                            <line
+                              x1={p0.x * 1000} y1={p0.y * 1000}
+                              x2={pN.x * 1000} y2={pN.y * 1000}
+                              stroke={color}
+                              strokeWidth={Math.max(2, width)}
+                              strokeDasharray="8 5"
+                              strokeLinecap="round"
+                              opacity={0.65}
+                            />
+                            {/* Arrow head hint */}
+                            {tool === "arrow" && (
+                              <circle
+                                cx={pN.x * 1000} cy={pN.y * 1000}
+                                r={6} fill={color} opacity={0.65}
+                              />
+                            )}
+                          </g>
+                        );
+                      }
+
+                      // Shape ghost
+                      const d = ghostShapeD(tool, gx, gy, gw, gh);
+                      return (
+                        <g pointerEvents="none">
+                          {/* Faint filled area */}
+                          <path
+                            d={d}
+                            fill={color}
+                            opacity={0.07}
+                          />
+                          {/* Dotted outline */}
+                          <path
+                            d={d}
+                            fill="none"
+                            stroke={color}
+                            strokeWidth={Math.max(2, width)}
+                            strokeDasharray="7 4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            opacity={0.7}
+                          />
+                          {/* Corner size hint — shows W × H in small text */}
+                          <text
+                            x={gx + gw + 6}
+                            y={gy - 6}
+                            fill={color}
+                            fontSize={Math.max(18, Math.min(28, gw * 0.08))}
+                            fontWeight="bold"
+                            fontFamily="Inter, system-ui, sans-serif"
+                            opacity={0.75}
+                          >
+                            {Math.round(draftBounds.width * 100)}×{Math.round(draftBounds.height * 100)}
+                          </text>
+                        </g>
+                      );
+                    })()}
 
                     {eraserPos && tool.includes("eraser") && (
                       <circle cx={eraserPos.x * 1000} cy={eraserPos.y * 1000} r={eraserSize} fill="rgba(239,68,68,0.18)" stroke="#ef4444" strokeWidth="2" strokeDasharray="4 3" pointerEvents="none" />
+                    )}
+
+                    {/* Laser pointer dot — shown when laserPointer mode is on */}
+                    {laserPointer && eraserPos && !tool.includes("eraser") && (
+                      <g pointerEvents="none">
+                        <circle cx={eraserPos.x * 1000} cy={eraserPos.y * 1000} r={12} fill="rgba(239,68,68,0.25)" />
+                        <circle cx={eraserPos.x * 1000} cy={eraserPos.y * 1000} r={6} fill="#ef4444" />
+                        <circle cx={eraserPos.x * 1000} cy={eraserPos.y * 1000} r={3} fill="#ffffff" />
+                      </g>
                     )}
                   </svg>
                 </div>
@@ -1271,8 +1578,14 @@ export function ViewerClient() {
 
             {/* ─── BOTTOM FLOATING DOCK ────────────────────────────────────
                 floating-dock-wrapper owns both the pill (collapsed state) and
-                the full dock (expanded state). They swap — never overlap.   */}
-            <div className="floating-dock-wrapper">
+                the full dock (expanded state). They swap — never overlap.
+                When dockPos is set the wrapper switches to fixed positioning
+                so the user can drag it anywhere on screen.               */}
+            <div
+              className={`floating-dock-wrapper ${dockPos ? "dock-free" : ""}`}
+              ref={dockRef}
+              style={dockPos ? { left: dockPos.x, top: dockPos.y, bottom: "auto", transform: "none" } : undefined}
+            >
 
               {/* Trigger pill — shown when dock is collapsed */}
               {dockCollapsed && (
@@ -1397,6 +1710,39 @@ export function ViewerClient() {
 
               {/* ─── FIX #22: Bottom dock split into Drawing group + Presentation group ─── */}
               <div className={`control-dock ${dockCollapsed ? "collapsed" : ""}`}>
+
+                {/* Drag grip — lets the user reposition the toolbar anywhere */}
+                <div
+                  className="dock-grip"
+                  title="Drag to move toolbar · Double-click to snap back"
+                  aria-label="Drag toolbar"
+                  onPointerDown={e => {
+                    e.preventDefault();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    const dock = dockRef.current;
+                    const rect = dock?.getBoundingClientRect();
+                    dockDragRef.current = {
+                      startX: e.clientX,
+                      startY: e.clientY,
+                      originX: rect?.left ?? e.clientX - 200,
+                      originY: rect?.top ?? e.clientY - 32,
+                      dragging: true,
+                    };
+                  }}
+                  onDoubleClick={() => {
+                    // Double-click grip → snap back to default bottom-centre
+                    setDockPos(null);
+                    if (dockDragRef.current) dockDragRef.current.dragging = false;
+                  }}
+                >
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+
                 {/* GROUP A: Drawing tools */}
                 <div className="tool-group drawing-tools-group">
 
@@ -1445,53 +1791,16 @@ export function ViewerClient() {
                     )}
                   </div>
 
-                  {/* Shapes group */}
-                  <div className="tool-dropdown-container" style={{ position: "relative" }}>
-                    <button type="button"
-                      className={["rectangle","ellipse","triangle","diamond","star","cloud","pentagon","hexagon","octagon","heart","cross","parallelogram","right-triangle","cylinder","graph"].includes(tool) ? "tool-active" : ""}
-                      title="Geometric Shapes" aria-expanded={activeDropdown === "shape"} aria-haspopup="true"
-                      onClick={() => {
-                        if (!["rectangle","ellipse","triangle","diamond","star","cloud","pentagon","hexagon","octagon","heart","cross","parallelogram","right-triangle","cylinder","graph"].includes(tool)) setTool("rectangle");
-                        setActiveDropdown(activeDropdown === "shape" ? null : "shape");
-                        setPropertiesOpen(true);
-                      }}>
-                      <span>{tool==="ellipse"?"○":tool==="triangle"?"△":tool==="diamond"?"◇":tool==="star"?"☆":tool==="cloud"?"☁":tool==="graph"?"📈":tool==="pentagon"?"⬠":tool==="hexagon"?"⬡":tool==="octagon"?"⯃":tool==="heart"?"♡":tool==="cross"?"✚":tool==="parallelogram"?"▱":tool==="right-triangle"?"◺":tool==="cylinder"?"⌻":"□"}</span>
-                      <small>Shapes ▾</small>
-                    </button>
-                    {activeDropdown === "shape" && (
-                      <div className="tool-dropdown-menu shapes-grid" role="menu" onClick={e => e.stopPropagation()}>
-                        <div className="shapes-section-label">Basic</div>
-                        {[["rectangle","□ Rect"],["ellipse","○ Circle"],["triangle","△ Triangle"],["right-triangle","◺ Rt Tri"],["diamond","◇ Diamond"],["parallelogram","▱ Parallelogram"]].map(([t,l]) => (
-                          <button key={t} role="menuitem" className={tool === t ? "active" : ""} onClick={() => { setTool(t as AnnotationType); setActiveDropdown(null); setPropertiesOpen(true); }}>{l}</button>
-                        ))}
-                        <div className="shapes-section-label">Polygons</div>
-                        {[["pentagon","⬠ Pentagon"],["hexagon","⬡ Hexagon"],["octagon","⯃ Octagon"],["cross","✚ Cross"]].map(([t,l]) => (
-                          <button key={t} role="menuitem" className={tool === t ? "active" : ""} onClick={() => { setTool(t as AnnotationType); setActiveDropdown(null); setPropertiesOpen(true); }}>{l}</button>
-                        ))}
-                        <div className="shapes-section-label">Decorative</div>
-                        {[["star","☆ Star"],["heart","♡ Heart"],["cloud","☁ Cloud"],["cylinder","⌻ Cylinder"]].map(([t,l]) => (
-                          <button key={t} role="menuitem" className={tool === t ? "active" : ""} onClick={() => { setTool(t as AnnotationType); setActiveDropdown(null); setPropertiesOpen(true); }}>{l}</button>
-                        ))}
-                        <div className="shapes-section-label">Data</div>
-                        <button role="menuitem" className={tool === "graph" ? "active" : ""} onClick={() => { setTool("graph"); setActiveDropdown(null); setPropertiesOpen(true); }}>📈 Graph</button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Lines group */}
-                  <div className="tool-dropdown-container" style={{ position: "relative" }}>
-                    <button type="button" className={["line","arrow"].includes(tool) ? "tool-active" : ""} title="Lines & Connectors"
-                      aria-expanded={activeDropdown === "line"} aria-haspopup="true"
-                      onClick={() => { if (!["line","arrow"].includes(tool)) setTool("line"); setActiveDropdown(activeDropdown === "line" ? null : "line"); setPropertiesOpen(true); }}>
-                      <span>{tool === "arrow" ? "➜" : "／"}</span><small>Lines ▾</small>
-                    </button>
-                    {activeDropdown === "line" && (
-                      <div className="tool-dropdown-menu" style={{ gridTemplateColumns: "repeat(2,1fr)" }} role="menu" onClick={e => e.stopPropagation()}>
-                        <button role="menuitem" className={tool === "line" ? "active" : ""} onClick={() => { setTool("line"); setActiveDropdown(null); setPropertiesOpen(true); }}>／ Line</button>
-                        <button role="menuitem" className={tool === "arrow" ? "active" : ""} onClick={() => { setTool("arrow"); setActiveDropdown(null); setPropertiesOpen(true); }}>➜ Arrow</button>
-                      </div>
-                    )}
-                  </div>
+                  {/* Shapes — opens the floating shapes panel */}
+                  <button
+                    type="button"
+                    className={["rectangle","ellipse","triangle","diamond","star","cloud","pentagon","hexagon","octagon","heart","cross","parallelogram","right-triangle","cylinder","graph","line","arrow"].includes(tool) ? "tool-active" : ""}
+                    title="Shapes & Graph panel"
+                    onClick={() => setShapesPanelOpen(v => !v)}
+                  >
+                    <span>{tool==="ellipse"?"○":tool==="triangle"?"△":tool==="diamond"?"◇":tool==="star"?"☆":tool==="cloud"?"☁":tool==="graph"?"📈":tool==="pentagon"?"⬠":tool==="hexagon"?"⬡":tool==="octagon"?"⯃":tool==="heart"?"♡":tool==="cross"?"✚":tool==="parallelogram"?"▱":tool==="right-triangle"?"◺":tool==="cylinder"?"⌻":tool==="line"?"／":tool==="arrow"?"➜":"□"}</span>
+                    <small>Shapes ▾</small>
+                  </button>
 
                   {/* Text */}
                   <button type="button" className={tool === "text" ? "tool-active" : ""} title="Insert Text" onClick={() => { setTool("text"); setActiveDropdown(null); setPropertiesOpen(true); }}>
@@ -1583,62 +1892,342 @@ export function ViewerClient() {
         </div>
       )}
 
-      {/* ─── Settings modal ───────────────────────────────────────────────────── */}
+      {/* ─── Settings modal ─────────────────────────────────────────────────── */}
       {settingsOpen && (
         <div className="settings-modal-backdrop" onClick={() => setSettingsOpen(false)} role="presentation">
           <div className="settings-modal-card" role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={e => e.stopPropagation()}>
+
+            {/* Header */}
             <div className="settings-modal-header">
-              <h3 id="settings-title">⚙️ Presentation & Canvas Settings</h3>
-              <button type="button" className="close-btn" onClick={() => setSettingsOpen(false)} aria-label="Close settings">✕</button>
+              <h3 id="settings-title">⚙️ Settings</h3>
+              <button type="button" className="sm-close-btn" onClick={() => setSettingsOpen(false)} aria-label="Close settings">✕</button>
             </div>
+
+            {/* Tab strip */}
+            <div className="settings-tabs" role="tablist">
+              {(["canvas", "tools", "document", "view"] as const).map(tab => (
+                <button
+                  key={tab}
+                  role="tab"
+                  aria-selected={settingsTab === tab}
+                  className={`settings-tab-btn ${settingsTab === tab ? "active" : ""}`}
+                  onClick={() => setSettingsTab(tab)}
+                >
+                  {tab === "canvas" && "🎨 Canvas"}
+                  {tab === "tools" && "🖊️ Tools"}
+                  {tab === "document" && "📄 Document"}
+                  {tab === "view" && "👁️ View"}
+                </button>
+              ))}
+            </div>
+
+            {/* Body */}
             <div className="settings-modal-body">
-              <div className="settings-section">
-                <h4>🧹 Clear Actions</h4>
-                <div className="settings-btn-row">
-                  <button type="button" onClick={() => { clearDrawingsOnPage(); setSettingsOpen(false); }}>✏️ Clear Ink</button>
-                  <button type="button" onClick={() => { clearShapesOnPage(); setSettingsOpen(false); }}>📐 Clear Shapes</button>
-                  <button type="button" className="danger-btn" onClick={() => { clearAllOnPage(); setSettingsOpen(false); }}>🗑️ Clear Entire Page</button>
-                </div>
-              </div>
-              <div className="settings-section">
-                <h4>🎨 Slide Background</h4>
-                <div className="bg-color-swatches">
-                  {[{label:"Dark Slate",color:"#1e293b"},{label:"Clean White",color:"#ffffff"},{label:"Deep Blue",color:"#1e3a8a"},{label:"Board Green",color:"#14532d"},{label:"Midnight",color:"#0f172a"}].map(bg => (
-                    <button key={bg.color} type="button" className={`bg-swatch ${currentPage?.background === bg.color ? "active" : ""}`} style={{ background: bg.color }} onClick={() => changePageBackground(bg.color)} title={bg.label} aria-label={bg.label} />
-                  ))}
-                </div>
-              </div>
-              <div className="settings-section">
-                <h4>🎛️ Toolbar Behaviour</h4>
-                <div className="settings-toggle-row">
-                  <div>
-                    <strong>Auto-Hide Toolbar on Drawing</strong>
-                    <small>Collapses toolbar when using pen/ink tools on the slide</small>
+
+              {/* ── TAB: Canvas ── */}
+              {settingsTab === "canvas" && (
+                <>
+                  {/* Slide background */}
+                  <div className="settings-section">
+                    <h4>Slide Background</h4>
+                    <div className="sm-bg-presets">
+                      {[
+                        { label: "Dark Slate",  color: "#1e293b" },
+                        { label: "White",        color: "#ffffff" },
+                        { label: "Deep Blue",    color: "#1e3a8a" },
+                        { label: "Board Green",  color: "#14532d" },
+                        { label: "Midnight",     color: "#0f172a" },
+                        { label: "Warm Cream",   color: "#fdf6e3" },
+                        { label: "Soft Gray",    color: "#f1f5f9" },
+                        { label: "Deep Purple",  color: "#3b0764" },
+                      ].map(bg => (
+                        <button
+                          key={bg.color}
+                          type="button"
+                          className={`sm-bg-swatch ${currentPage?.background === bg.color ? "active" : ""}`}
+                          style={{ background: bg.color }}
+                          onClick={() => changePageBackground(bg.color)}
+                          title={bg.label}
+                          aria-label={bg.label}
+                        />
+                      ))}
+                    </div>
+                    <div className="sm-row" style={{ marginTop: "0.5rem" }}>
+                      <span className="sm-label">Custom colour</span>
+                      <input
+                        type="color"
+                        className="sm-color-input"
+                        value={currentPage?.background || "#1e293b"}
+                        onChange={e => changePageBackground(e.target.value)}
+                        aria-label="Custom slide background colour"
+                      />
+                    </div>
                   </div>
-                  <button type="button" className={`stroke-btn ${autoHideDock ? "active" : ""}`} onClick={() => setAutoHideDock(v => !v)}>
-                    {autoHideDock ? "ON ✓" : "OFF ✕"}
-                  </button>
-                </div>
-              </div>
-              <div className="settings-section">
-                <h4>📄 Document & View</h4>
-                <div className="settings-btn-row">
-                  <button type="button" className="primary-btn"
-                    onClick={async () => {
-                      const blob = await pdfExporter.export(source, annotations, pageOrder);
-                      const link = document.createElement("a");
-                      link.href = URL.createObjectURL(blob);
-                      link.download = `${documentName.replace(/\s+/g, "_")}.pdf`;
-                      link.click();
-                      setSettingsOpen(false);
-                    }}>📥 Export as PDF</button>
-                  <button type="button" onClick={() => { setZoom(1.0); setPan({ x: 0, y: 0 }); setSettingsOpen(false); }}>⛶ Reset Zoom</button>
-                  <button type="button" onClick={() => { toggleFullscreen(); setSettingsOpen(false); }}>{isFullscreen ? "🗗 Exit Fullscreen" : "⛶ Fullscreen"}</button>
-                </div>
-              </div>
+
+                  {/* Grid overlay */}
+                  <div className="settings-section">
+                    <h4>Grid Overlay</h4>
+                    <div className="sm-chip-row">
+                      {(["none", "dots", "lines"] as const).map(g => (
+                        <button
+                          key={g}
+                          type="button"
+                          className={`sm-chip ${gridType === g ? "active" : ""}`}
+                          onClick={() => setGridType(g)}
+                        >
+                          {g === "none" ? "Off" : g === "dots" ? "⠿ Dots" : "⊞ Lines"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Clear actions */}
+                  <div className="settings-section">
+                    <h4>Clear This Page</h4>
+                    <div className="sm-btn-row">
+                      <button type="button" className="sm-btn" onClick={() => { clearDrawingsOnPage(); setSettingsOpen(false); }}>✏️ Clear Ink</button>
+                      <button type="button" className="sm-btn" onClick={() => { clearShapesOnPage(); setSettingsOpen(false); }}>📐 Clear Shapes</button>
+                      <button type="button" className="sm-btn sm-btn-danger" onClick={() => { clearAllOnPage(); setSettingsOpen(false); }}>🗑️ Clear All</button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* ── TAB: Tools ── */}
+              {settingsTab === "tools" && (
+                <>
+                  {/* Default pen colour */}
+                  <div className="settings-section">
+                    <h4>Default Pen Colour</h4>
+                    <div className="sm-row">
+                      <div className="sm-swatch-row">
+                        {["#000000","#ffffff","#2563eb","#dc2626","#16a34a","#ca8a04","#7c3aed","#db2777"].map(c => (
+                          <button
+                            key={c}
+                            type="button"
+                            className={`sm-color-swatch ${color === c ? "active" : ""}`}
+                            style={{ background: c, border: c === "#ffffff" ? "1px solid #d1d5db" : "none" }}
+                            onClick={() => setColor(c)}
+                            aria-label={`Set pen colour ${c}`}
+                          />
+                        ))}
+                      </div>
+                      <input type="color" className="sm-color-input" value={color} onChange={e => setColor(e.target.value)} aria-label="Custom pen colour" />
+                    </div>
+                  </div>
+
+                  {/* Default stroke width */}
+                  <div className="settings-section">
+                    <h4>Default Stroke Width</h4>
+                    <div className="sm-row" style={{ gap: "1rem" }}>
+                      <div className="sm-chip-row">
+                        {[2, 4, 6, 10, 16].map(w => (
+                          <button key={w} type="button" className={`sm-chip ${width === w ? "active" : ""}`} onClick={() => setWidth(w)}>{w}px</button>
+                        ))}
+                      </div>
+                      <input
+                        type="range" min="1" max="48" value={width}
+                        onChange={e => setWidth(+e.target.value)}
+                        style={{ flex: 1, accentColor: "var(--blue)" }}
+                        aria-label="Stroke width"
+                      />
+                      <span className="sm-value-badge">{width}px</span>
+                    </div>
+                  </div>
+
+                  {/* Default opacity */}
+                  <div className="settings-section">
+                    <h4>Default Opacity</h4>
+                    <div className="sm-row" style={{ gap: "1rem" }}>
+                      <input
+                        type="range" min="0.1" max="1" step="0.05" value={opacity}
+                        onChange={e => setOpacity(+e.target.value)}
+                        style={{ flex: 1, accentColor: "var(--blue)" }}
+                        aria-label="Default opacity"
+                      />
+                      <span className="sm-value-badge">{Math.round(opacity * 100)}%</span>
+                    </div>
+                  </div>
+
+                  {/* Toolbar behaviour */}
+                  <div className="settings-section">
+                    <h4>Toolbar Behaviour</h4>
+                    <div className="sm-toggle-row">
+                      <div className="sm-toggle-label">
+                        <strong>Auto-Hide on Drawing</strong>
+                        <small>Collapses toolbar when using pen / ink tools</small>
+                      </div>
+                      <button type="button" className={`sm-toggle-btn ${autoHideDock ? "on" : ""}`} onClick={() => setAutoHideDock(v => !v)}>
+                        <span className="sm-toggle-thumb" />
+                      </button>
+                    </div>
+                    <div className="sm-toggle-row">
+                      <div className="sm-toggle-label">
+                        <strong>Show Page Sidebar</strong>
+                        <small>Thumbnails panel on the left edge</small>
+                      </div>
+                      <button type="button" className={`sm-toggle-btn ${sidebarOpen ? "on" : ""}`} onClick={() => setSidebarOpen(v => !v)}>
+                        <span className="sm-toggle-thumb" />
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* ── TAB: Document ── */}
+              {settingsTab === "document" && (
+                <>
+                  {/* Rename */}
+                  <div className="settings-section">
+                    <h4>Presentation Name</h4>
+                    {renamingDoc ? (
+                      <div className="sm-row" style={{ gap: "0.5rem" }}>
+                        <input
+                          className="sm-text-input"
+                          value={renameValue}
+                          autoFocus
+                          maxLength={80}
+                          onChange={e => setRenameValue(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === "Enter" && renameValue.trim()) { setDocumentName(renameValue.trim()); setRenamingDoc(false); }
+                            if (e.key === "Escape") setRenamingDoc(false);
+                          }}
+                          aria-label="Rename presentation"
+                        />
+                        <button type="button" className="sm-btn sm-btn-primary" onClick={() => { if (renameValue.trim()) { setDocumentName(renameValue.trim()); setRenamingDoc(false); } }}>Save</button>
+                        <button type="button" className="sm-btn" onClick={() => setRenamingDoc(false)}>Cancel</button>
+                      </div>
+                    ) : (
+                      <div className="sm-row" style={{ gap: "0.75rem" }}>
+                        <span className="sm-doc-name">{documentName}</span>
+                        <button type="button" className="sm-btn" onClick={() => { setRenameValue(documentName); setRenamingDoc(true); }}>✏️ Rename</button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Stats */}
+                  <div className="settings-section">
+                    <h4>Document Info</h4>
+                    <div className="sm-info-grid">
+                      <div className="sm-info-item"><span className="sm-info-val">{pages}</span><span className="sm-info-lbl">Pages</span></div>
+                      <div className="sm-info-item"><span className="sm-info-val">{annotations.filter(a => drawingTypes.includes(a.type as AnnotationType)).length}</span><span className="sm-info-lbl">Ink strokes</span></div>
+                      <div className="sm-info-item"><span className="sm-info-val">{annotations.filter(a => !drawingTypes.includes(a.type as AnnotationType)).length}</span><span className="sm-info-lbl">Shapes / Text</span></div>
+                      <div className="sm-info-item"><span className="sm-info-val">{annotations.length}</span><span className="sm-info-lbl">Total annotations</span></div>
+                    </div>
+                  </div>
+
+                  {/* Export */}
+                  <div className="settings-section">
+                    <h4>Export</h4>
+                    <div className="sm-btn-row">
+                      <button
+                        type="button"
+                        className="sm-btn sm-btn-primary"
+                        onClick={async () => {
+                          const blob = await pdfExporter.export(source, annotations, pageOrder);
+                          const link = document.createElement("a");
+                          link.href = URL.createObjectURL(blob);
+                          link.download = `${documentName.replace(/\s+/g, "_")}.pdf`;
+                          link.click();
+                          setSettingsOpen(false);
+                        }}
+                      >📥 Export as PDF</button>
+                    </div>
+                  </div>
+
+                  {/* Danger zone */}
+                  <div className="settings-section settings-danger-zone">
+                    <h4>⚠️ Danger Zone</h4>
+                    <div className="sm-btn-row">
+                      <button type="button" className="sm-btn sm-btn-danger" onClick={() => {
+                        showConfirm("Clear ALL annotations on ALL pages? This cannot be undone.", () => {
+                          const next: Annotation[] = [];
+                          commit(next);
+                          setConfirmState(null);
+                          setSettingsOpen(false);
+                        });
+                      }}>🗑️ Clear Entire Presentation</button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* ── TAB: View ── */}
+              {settingsTab === "view" && (
+                <>
+                  {/* Zoom controls */}
+                  <div className="settings-section">
+                    <h4>Zoom & Display</h4>
+                    <div className="sm-row" style={{ gap: "1rem", flexWrap: "wrap" }}>
+                      <button type="button" className="sm-btn" onClick={() => { setZoom(1.0); setPan({ x: 0, y: 0 }); }}>⛶ Reset Zoom (100%)</button>
+                      <button type="button" className="sm-btn" onClick={() => setZoom(z => Math.min(4.0, +(z + 0.25).toFixed(2)))}>🔍 Zoom In</button>
+                      <button type="button" className="sm-btn" onClick={() => setZoom(z => Math.max(0.25, +(z - 0.25).toFixed(2)))}>🔍 Zoom Out</button>
+                    </div>
+                    <div className="sm-row" style={{ gap: "1rem", marginTop: "0.5rem" }}>
+                      <span className="sm-label">Current zoom</span>
+                      <span className="sm-value-badge">{Math.round(zoom * 100)}%</span>
+                    </div>
+                  </div>
+
+                  {/* Fullscreen */}
+                  <div className="settings-section">
+                    <h4>Fullscreen</h4>
+                    <div className="sm-btn-row">
+                      <button type="button" className="sm-btn" onClick={() => { toggleFullscreen(); setSettingsOpen(false); }}>
+                        {isFullscreen ? "🗗 Exit Fullscreen" : "⛶ Enter Fullscreen"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Visibility toggles */}
+                  <div className="settings-section">
+                    <h4>Visibility</h4>
+                    <div className="sm-toggle-row">
+                      <div className="sm-toggle-label">
+                        <strong>Hide All Annotations</strong>
+                        <small>Temporarily hide ink & shapes — slides only</small>
+                      </div>
+                      <button type="button" className={`sm-toggle-btn ${hideAnnotations ? "on" : ""}`} onClick={() => setHideAnnotations(v => !v)}>
+                        <span className="sm-toggle-thumb" />
+                      </button>
+                    </div>
+                    <div className="sm-toggle-row">
+                      <div className="sm-toggle-label">
+                        <strong>Laser Pointer Mode</strong>
+                        <small>Cursor becomes a red laser dot while drawing</small>
+                      </div>
+                      <button type="button" className={`sm-toggle-btn ${laserPointer ? "on" : ""}`} onClick={() => setLaserPointer(v => !v)}>
+                        <span className="sm-toggle-thumb" />
+                      </button>
+                    </div>
+                    <div className="sm-toggle-row">
+                      <div className="sm-toggle-label">
+                        <strong>Smooth Page Transitions</strong>
+                        <small>Fade animation between slides</small>
+                      </div>
+                      <button type="button" className={`sm-toggle-btn ${smoothTransition ? "on" : ""}`} onClick={() => setSmoothTransition(v => !v)}>
+                        <span className="sm-toggle-thumb" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Present mode shortcut */}
+                  <div className="settings-section">
+                    <h4>Presentation</h4>
+                    <div className="sm-btn-row">
+                      <button type="button" className="sm-btn sm-btn-primary" onClick={() => { setPresenting(v => !v); setSettingsOpen(false); }}>
+                        {presenting ? "⏹ Exit Presentation Mode" : "▶ Start Presenting"}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
+
+            {/* Footer */}
             <div className="settings-modal-footer">
-              <button type="button" onClick={() => setSettingsOpen(false)}>Done</button>
+              <span className="sm-footer-hint">Changes apply immediately</span>
+              <button type="button" className="sm-btn sm-btn-primary" onClick={() => setSettingsOpen(false)}>Done</button>
             </div>
           </div>
         </div>
@@ -1651,6 +2240,159 @@ export function ViewerClient() {
           onConfirm={confirmState.onConfirm}
           onCancel={() => setConfirmState(null)}
         />
+      )}
+
+      {/* ─── FLOATING SHAPES & GRAPH PANEL ───────────────────────────────────
+          Separate draggable window. position:fixed so it floats over everything
+          and is never clipped by the canvas or workspace overflow.           */}
+      {shapesPanelOpen && (
+        <div
+          ref={shapesPanelRef}
+          className="shapes-panel"
+          style={shapesPanelPos
+            ? { left: shapesPanelPos.x, top: shapesPanelPos.y, right: "auto" }
+            : undefined
+          }
+          role="dialog"
+          aria-label="Shapes & Graph panel"
+        >
+          {/* Drag header */}
+          <div
+            className="shapes-panel-header"
+            onPointerDown={e => {
+              e.preventDefault();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              const rect = shapesPanelRef.current?.getBoundingClientRect();
+              shapesPanelDragRef.current = {
+                startX: e.clientX,
+                startY: e.clientY,
+                originX: rect?.left ?? 80,
+                originY: rect?.top ?? 80,
+                dragging: true,
+              };
+            }}
+          >
+            <span className="shapes-panel-title">⬡ Shapes & Graph</span>
+            <button
+              type="button"
+              className="shapes-panel-close"
+              onClick={() => setShapesPanelOpen(false)}
+              aria-label="Close shapes panel"
+            >✕</button>
+          </div>
+
+          {/* ── Basic shapes ── */}
+          <div className="shapes-panel-section">
+            <span className="shapes-panel-label">Basic</span>
+            <div className="shapes-panel-grid">
+              {([
+                ["rectangle", "□", "Rectangle"],
+                ["ellipse",   "○", "Circle"],
+                ["triangle",  "△", "Triangle"],
+                ["right-triangle","◺","Rt Triangle"],
+                ["diamond",   "◇", "Diamond"],
+                ["parallelogram","▱","Parallelogram"],
+              ] as [string, string, string][]).map(([t, icon, label]) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={`shapes-panel-btn ${tool === t ? "active" : ""}`}
+                  title={label}
+                  onClick={() => { setTool(t as AnnotationType); setPropertiesOpen(true); }}
+                >
+                  <span className="sp-icon">{icon}</span>
+                  <span className="sp-label">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Polygons ── */}
+          <div className="shapes-panel-section">
+            <span className="shapes-panel-label">Polygons</span>
+            <div className="shapes-panel-grid">
+              {([
+                ["pentagon",  "⬠", "Pentagon"],
+                ["hexagon",   "⬡", "Hexagon"],
+                ["octagon",   "⯃", "Octagon"],
+                ["cross",     "✚", "Cross"],
+              ] as [string, string, string][]).map(([t, icon, label]) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={`shapes-panel-btn ${tool === t ? "active" : ""}`}
+                  title={label}
+                  onClick={() => { setTool(t as AnnotationType); setPropertiesOpen(true); }}
+                >
+                  <span className="sp-icon">{icon}</span>
+                  <span className="sp-label">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Decorative ── */}
+          <div className="shapes-panel-section">
+            <span className="shapes-panel-label">Decorative</span>
+            <div className="shapes-panel-grid">
+              {([
+                ["star",     "☆", "Star"],
+                ["heart",    "♡", "Heart"],
+                ["cloud",    "☁", "Cloud"],
+                ["cylinder", "⌻", "Cylinder"],
+              ] as [string, string, string][]).map(([t, icon, label]) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={`shapes-panel-btn ${tool === t ? "active" : ""}`}
+                  title={label}
+                  onClick={() => { setTool(t as AnnotationType); setPropertiesOpen(true); }}
+                >
+                  <span className="sp-icon">{icon}</span>
+                  <span className="sp-label">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Connectors ── */}
+          <div className="shapes-panel-section">
+            <span className="shapes-panel-label">Connectors</span>
+            <div className="shapes-panel-grid">
+              {([
+                ["line",  "／", "Line"],
+                ["arrow", "➜", "Arrow"],
+              ] as [string, string, string][]).map(([t, icon, label]) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={`shapes-panel-btn ${tool === t ? "active" : ""}`}
+                  title={label}
+                  onClick={() => { setTool(t as AnnotationType); setPropertiesOpen(true); }}
+                >
+                  <span className="sp-icon">{icon}</span>
+                  <span className="sp-label">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Graph / Data ── */}
+          <div className="shapes-panel-section">
+            <span className="shapes-panel-label">Data & Graph</span>
+            <div className="shapes-panel-grid">
+              <button
+                type="button"
+                className={`shapes-panel-btn ${tool === "graph" ? "active" : ""}`}
+                title="Graph"
+                onClick={() => { setTool("graph"); setPropertiesOpen(true); }}
+              >
+                <span className="sp-icon">📈</span>
+                <span className="sp-label">Graph</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );
