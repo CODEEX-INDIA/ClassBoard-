@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Primary SEO -->
+  <title>Maples Academy Smartboard Tool — Interactive Classroom Presentation Software</title>
+  <meta name="description" content="Maples Academy Smartboard Tool is a free, open-source interactive classroom presentation platform. Annotate PDFs, draw shapes, present slides, and export — all from any device, in real time." />
+  <meta name="keywords" content="smartboard tool, classroom presentation software, interactive whiteboard, PDF annotation, teach online, digital whiteboard, Next.js smartboard, free classroom tool, PDF presenter, school presentation app" />
+  <meta name="author" content="Maples Academy" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://github.com/Heoster/ClassBoard-" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://github.com/Heoster/ClassBoard-" />
+  <meta property="og:title" content="Maples Academy Smartboard Tool — Interactive Classroom Presentation Software" />
+  <meta property="og:description" content="Open-source smartboard app for teachers. Annotate PDFs, draw shapes, present to students, and export — works on any device." />
+  <meta property="og:image" content="https://raw.githubusercontent.com/Heoster/ClassBoard-/main/examples/demo.gif" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Maples Academy Smartboard Tool" />
+  <meta name="twitter:description" content="Free interactive smartboard for teachers. Present PDFs, annotate live, draw shapes, export — any device." />
+  <meta name="twitter:image" content="https://raw.githubusercontent.com/Heoster/ClassBoard-/main/examples/demo.gif" />
+
+  <!-- Structured Data — SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Maples Academy Smartboard Tool",
+    "operatingSystem": "Web",
+    "applicationCategory": "EducationApplication",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "description": "An open-source interactive classroom presentation tool built with Next.js. Annotate PDFs, draw shapes, present slides, and export — from any device.",
+    "url": "https://github.com/Heoster/ClassBoard-",
+    "author": { "@type": "Organization", "name": "Maples Academy" },
+    "softwareVersion": "0.1.0",
+    "license": "https://github.com/Heoster/ClassBoard-/blob/main/LICENSE",
+    "featureList": [
+      "PDF viewer with high-resolution rendering",
+      "Freehand pen, calligraphy, and highlighter tools",
+      "Geometric shapes: rectangle, ellipse, triangle, star, heart, cloud, and more",
+      "Line and arrow connectors",
+      "Text annotations with custom fonts",
+      "Image insert via drag-and-drop",
+      "Graph / coordinate-plane shape",
+      "Undo and redo with full history",
+      "Draggable floating toolbar",
+      "Separate draggable shapes panel",
+      "Ghost shape preview while drawing",
+      "Draw annotations outside canvas boundary",
+      "Zoom, pan, and pinch-to-zoom",
+      "Grid overlay (dots or lines)",
+      "Laser pointer mode",
+      "Slide background customisation",
+      "Page thumbnails sidebar",
+      "Present mode (hides all UI controls)",
+      "PDF export with annotations",
+      "Cloud sync via Supabase",
+      "Mobile upload via QR code",
+      "Responsive — works on tablets and smartboards"
+    ]
+  }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue: #2563eb;
+      --blue-dark: #1d4ed8;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --paper: #f8fafc;
+      --white: #ffffff;
+      --radius: 14px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--white);
+      color: var(--ink);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+      padding: 0 2rem;
+      height: 60px;
+      background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      font-size: 0.85rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      color: var(--ink);
+      text-decoration: none;
+    }
+    .nav-brand-mark {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      background: var(--blue);
+      color: #fff;
+      font-size: 1rem;
+    }
+    nav ul {
+      display: flex;
+      align-items: center;
+      gap: 1.75rem;
+      list-style: none;
+    }
+    nav ul a {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.12s;
+    }
+    nav ul a:hover { color: var(--blue); }
+    .nav-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.45rem 1.1rem;
+      background: var(--blue);
+      color: #fff !important;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      transition: background 0.12s;
+    }
+    .nav-cta:hover { background: var(--blue-dark); text-decoration: none; }
+
+    /* ── HERO ── */
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 5rem 2rem 4rem;
+      text-align: center;
+      background: linear-gradient(160deg, #f0f5ff 0%, #ffffff 60%);
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      top: -120px; left: 50%;
+      transform: translateX(-50%);
+      width: 900px; height: 400px;
+      background: radial-gradient(ellipse, rgba(37,99,235,0.1) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.35rem 0.85rem;
+      border-radius: 999px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: var(--blue);
+      font-size: 0.75rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 1.25rem;
+    }
+    .hero-eyebrow::before {
+      content: "";
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #22c55e;
+      box-shadow: 0 0 0 4px rgba(34,197,94,0.2);
+    }
+    .hero h1 {
+      font-size: clamp(2.4rem, 6vw, 4.2rem);
+      font-weight: 900;
+      letter-spacing: -0.055em;
+      line-height: 1.05;
+      max-width: 780px;
+      margin: 0 auto 1.25rem;
+      color: var(--ink);
+    }
+    .hero h1 span { color: var(--blue); }
+    .hero-sub {
+      max-width: 560px;
+      margin: 0 auto 2.25rem;
+      font-size: 1.1rem;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.85rem;
+      flex-wrap: wrap;
+    }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.75rem 1.75rem;
+      background: var(--blue);
+      color: #fff;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      box-shadow: 0 6px 20px rgba(37,99,235,0.3);
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+    .btn-primary:hover { background: var(--blue-dark); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(37,99,235,0.4); text-decoration: none; }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.75rem 1.5rem;
+      background: #fff;
+      color: var(--ink);
+      border: 1.5px solid var(--line);
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+    .btn-secondary:hover { border-color: var(--blue); color: var(--blue); transform: translateY(-2px); text-decoration: none; }
+
+    .hero-demo {
+      margin-top: 3rem;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 24px 64px rgba(15,23,42,0.16), 0 0 0 1px rgba(37,99,235,0.12);
+      max-width: 860px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .hero-demo img { display: block; width: 100%; }
+
+    /* ── STATS BAR ── */
+    .stats-bar {
+      background: var(--ink);
+      color: #fff;
+      padding: 1.5rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3rem;
+      flex-wrap: wrap;
+    }
+    .stat { text-align: center; }
+    .stat-number { display: block; font-size: 1.75rem; font-weight: 900; letter-spacing: -0.04em; color: #fff; }
+    .stat-label { font-size: 0.72rem; font-weight: 600; color: #94a3b8; letter-spacing: 0.06em; text-transform: uppercase; }
+
+    /* ── SECTIONS ── */
+    section { padding: 5rem 2rem; }
+    .section-inner { max-width: 1100px; margin: 0 auto; }
+    .section-eyebrow {
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 0.65rem;
+    }
+    .section-title {
+      font-size: clamp(1.6rem, 3.5vw, 2.4rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: var(--ink);
+      max-width: 560px;
+      margin-bottom: 1rem;
+      line-height: 1.15;
+    }
+    .section-sub {
+      max-width: 520px;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.65;
+      margin-bottom: 2.5rem;
+    }
+
+    /* ── FEATURE GRID ── */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.25rem;
+    }
+    .feature-card {
+      padding: 1.5rem;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      transition: all 0.15s ease;
+    }
+    .feature-card:hover { border-color: #bfdbfe; box-shadow: 0 8px 24px rgba(37,99,235,0.08); transform: translateY(-2px); }
+    .feature-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      background: #eff6ff;
+      font-size: 1.35rem;
+      margin-bottom: 1rem;
+    }
+    .feature-card h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 0.4rem; color: var(--ink); }
+    .feature-card p { font-size: 0.83rem; color: var(--muted); line-height: 1.6; }
+
+    /* ── TWO-COL ── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+    .two-col.reverse { direction: rtl; }
+    .two-col.reverse > * { direction: ltr; }
+    .two-col-visual {
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 18px 50px rgba(15,23,42,0.12);
+      border: 1px solid var(--line);
+    }
+    .two-col-visual img { display: block; width: 100%; }
+    .two-col-text h2 {
+      font-size: clamp(1.4rem, 2.8vw, 2rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      margin-bottom: 0.85rem;
+      line-height: 1.15;
+    }
+    .two-col-text p { color: var(--muted); line-height: 1.7; margin-bottom: 1rem; }
+
+    /* ── TOOLS SHOWCASE ── */
+    .tools-bg { background: var(--ink); color: #fff; }
+    .tools-bg .section-title { color: #fff; }
+    .tools-bg .section-sub { color: #94a3b8; }
+    .tools-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 0.75rem;
+    }
+    .tool-chip {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 1rem 0.5rem;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #cbd5e1;
+      text-align: center;
+      transition: all 0.12s ease;
+    }
+    .tool-chip:hover { background: rgba(37,99,235,0.3); border-color: rgba(37,99,235,0.5); color: #fff; }
+    .tool-chip span { font-size: 1.5rem; }
+
+    /* ── HOW IT WORKS ── */
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem; counter-reset: steps; }
+    .step { position: relative; padding: 1.5rem; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); }
+    .step::before { counter-increment: steps; content: counter(steps); position: absolute; top: -14px; left: 1.5rem; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--blue); color: #fff; font-size: 0.78rem; font-weight: 800; }
+    .step h3 { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.4rem; margin-top: 0.25rem; }
+    .step p { font-size: 0.82rem; color: var(--muted); line-height: 1.6; }
+
+    /* ── TECH STACK ── */
+    .tech-list { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+    .tech-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.4rem 0.85rem;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    /* ── ROUTES TABLE ── */
+    .routes-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .routes-table th { text-align: left; padding: 0.7rem 1rem; background: var(--paper); border: 1px solid var(--line); font-size: 0.7rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+    .routes-table td { padding: 0.75rem 1rem; border: 1px solid var(--line); vertical-align: top; }
+    .routes-table tr:hover td { background: var(--paper); }
+    .route-pill { display: inline-block; padding: 0.15rem 0.55rem; background: #f1f5f9; border-radius: 5px; font-family: "Courier New", monospace; font-size: 0.78rem; color: var(--ink); }
+
+    /* ── SETUP ── */
+    .setup-steps { display: grid; gap: 1rem; }
+    .setup-step { display: flex; gap: 1rem; align-items: flex-start; padding: 1.25rem; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); }
+    .setup-num { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: var(--blue); color: #fff; font-size: 0.8rem; font-weight: 800; }
+    .setup-step h3 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.25rem; }
+    .setup-step p { font-size: 0.8rem; color: var(--muted); line-height: 1.55; }
+    .code-block { background: var(--ink); color: #e2e8f0; padding: 0.5rem 0.85rem; border-radius: 7px; font-family: "Courier New", monospace; font-size: 0.78rem; margin-top: 0.5rem; display: inline-block; }
+
+    /* ── CTA BANNER ── */
+    .cta-banner {
+      background: linear-gradient(135deg, #1e3a8a 0%, var(--blue) 100%);
+      color: #fff;
+      text-align: center;
+      padding: 4.5rem 2rem;
+    }
+    .cta-banner h2 { font-size: clamp(1.6rem, 3.5vw, 2.4rem); font-weight: 900; letter-spacing: -0.04em; margin-bottom: 0.85rem; }
+    .cta-banner p { max-width: 500px; margin: 0 auto 2rem; color: #bfdbfe; line-height: 1.65; }
+    .btn-white { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.8rem 2rem; background: #fff; color: var(--blue); border-radius: 10px; font-size: 0.95rem; font-weight: 800; box-shadow: 0 6px 20px rgba(0,0,0,0.2); transition: all 0.15s ease; text-decoration: none; }
+    .btn-white:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(0,0,0,0.25); text-decoration: none; }
+
+    /* ── FOOTER ── */
+    footer {
+      background: var(--ink);
+      color: #94a3b8;
+      padding: 2.5rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+      font-size: 0.78rem;
+    }
+    footer a { color: #94a3b8; }
+    footer a:hover { color: #fff; }
+    .footer-links { display: flex; gap: 1.5rem; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 800px) {
+      nav ul { display: none; }
+      .two-col { grid-template-columns: 1fr; gap: 2rem; }
+      .two-col.reverse { direction: ltr; }
+      .stats-bar { gap: 1.5rem; }
+      .hero h1 { font-size: clamp(1.9rem, 8vw, 3rem); }
+    }
+    @media (max-width: 500px) {
+      nav { padding: 0 1rem; }
+      .hero { padding: 3.5rem 1rem 2.5rem; }
+      section { padding: 3rem 1rem; }
+      .btn-primary, .btn-secondary { font-size: 0.85rem; padding: 0.65rem 1.2rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── NAVIGATION ── -->
+<nav>
+  <a href="#" class="nav-brand">
+    <span class="nav-brand-mark">📋</span>
+    MAPLES ACADEMY
+  </a>
+  <ul>
+    <li><a href="#features">Features</a></li>
+    <li><a href="#tools">Tools</a></li>
+    <li><a href="#how-it-works">How it works</a></li>
+    <li><a href="#setup">Setup</a></li>
+    <li><a href="#routes">Routes</a></li>
+    <li><a href="https://github.com/Heoster/ClassBoard-" target="_blank" rel="noopener" class="nav-cta">⭐ GitHub</a></li>
+  </ul>
+</nav>
+
+<!-- ── HERO ── -->
+<header class="hero">
+  <div class="hero-eyebrow">Open Source · Free Forever</div>
+  <h1>The <span>Smartboard Tool</span><br>built for modern classrooms</h1>
+  <p class="hero-sub">
+    Annotate PDFs, draw shapes, present lessons, and export — all in real time,
+    from any device. No subscription required.
+  </p>
+  <div class="hero-actions">
+    <a href="https://github.com/Heoster/ClassBoard-" target="_blank" rel="noopener" class="btn-primary">
+      ⭐ Star on GitHub
+    </a>
+    <a href="#setup" class="btn-secondary">
+      🚀 Get Started
+    </a>
+    <a href="#features" class="btn-secondary">
+      📖 See Features
+    </a>
+  </div>
+  <div class="hero-demo">
+    <img
+      src="examples/demo.gif"
+      alt="Maples Academy Smartboard Tool demo — annotating a PDF with pen and shapes in real time"
+      loading="eager"
+      width="860"
+      height="540"
+    />
+  </div>
+</header>
+
+<!-- ── STATS BAR ── -->
+<div class="stats-bar" role="region" aria-label="App statistics">
+  <div class="stat">
+    <span class="stat-number">25+</span>
+    <span class="stat-label">Drawing Tools</span>
+  </div>
+  <div class="stat">
+    <span class="stat-number">15+</span>
+    <span class="stat-label">Shape Types</span>
+  </div>
+  <div class="stat">
+    <span class="stat-number">100%</span>
+    <span class="stat-label">Free & Open Source</span>
+  </div>
+  <div class="stat">
+    <span class="stat-number">Any</span>
+    <span class="stat-label">Device Ready</span>
+  </div>
+  <div class="stat">
+    <span class="stat-number">4K</span>
+    <span class="stat-label">PDF Quality</span>
+  </div>
+</div>
+
+<!-- ── FEATURES ── -->
+<section id="features">
+  <div class="section-inner">
+    <p class="section-eyebrow">Everything you need</p>
+    <h2 class="section-title">A complete classroom presentation toolkit</h2>
+    <p class="section-sub">
+      Maples Academy Smartboard Tool replaces physical whiteboards, clunky desktop software,
+      and expensive smartboard subscriptions — in your browser, for free.
+    </p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon">📄</div>
+        <h3>High-Resolution PDF Viewer</h3>
+        <p>Renders PDFs at 2560px equivalent resolution. Quality never degrades on resize or zoom — text stays crisp on every projector and monitor.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">✏️</div>
+        <h3>Freehand Drawing</h3>
+        <p>Pen, calligraphy, and highlighter tools with smooth Bézier curves, coalesced pointer events, and per-stroke opacity control.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⬡</div>
+        <h3>15+ Geometric Shapes</h3>
+        <p>Rectangle, ellipse, triangle, diamond, star, heart, cloud, pentagon, hexagon, octagon, cross, cylinder, parallelogram, and more — each with a live ghost preview while drawing.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📈</div>
+        <h3>Graph / Coordinate Plane</h3>
+        <p>Insert a labelled coordinate grid with a single drag. Perfect for maths and science lessons — no third-party charting library needed.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">T</div>
+        <h3>Text Annotations</h3>
+        <p>8 font families including handwriting and dyslexia-friendly faces. Custom font size, colour, and multi-line support.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🖼</div>
+        <h3>Image Insert</h3>
+        <p>Drag and drop images directly onto the slide or use the image button. Any PNG, JPEG, GIF, or WebP is accepted.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">↩️</div>
+        <h3>Full Undo / Redo History</h3>
+        <p>Deterministic annotation history with Ctrl+Z / Ctrl+Y. Every stroke, shape, and deletion is reversible.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">☁️</div>
+        <h3>Cloud Sync via Supabase</h3>
+        <p>All annotations are saved to Supabase in real time. Open the same document on another device and pick up exactly where you left off.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📱</div>
+        <h3>Mobile Upload via QR Code</h3>
+        <p>Scan the QR code from any phone to upload documents wirelessly to the active session without email or USB.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">▶️</div>
+        <h3>Present Mode</h3>
+        <p>One click hides all UI chrome — sidebar, toolbar, page counter — leaving only the slide and your annotations. Ideal for projectors.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📥</div>
+        <h3>PDF Export with Annotations</h3>
+        <p>Export the entire presentation including all drawings, shapes, and text annotations as a standard PDF with one click from the top bar.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔍</div>
+        <h3>Zoom, Pan & Pinch</h3>
+        <p>Mouse wheel zoom, click-drag pan, pinch-to-zoom on tablets. Double-click to reset. Ctrl+scroll for precision zoom.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⠿</div>
+        <h3>Grid Overlay</h3>
+        <p>Toggle a dot grid or ruled lines over the slide — helpful for aligned drawing and graph explanations.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔴</div>
+        <h3>Laser Pointer Mode</h3>
+        <p>A glowing red dot tracks your cursor across the slide during presentations — no physical pointer stick needed.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⚙️</div>
+        <h3>Comprehensive Settings</h3>
+        <p>4-tab settings panel: Canvas, Tools, Document, and View. Rename documents, check annotation stats, configure auto-hide behaviour, and more.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── TWO-COL SPOTLIGHT ── -->
+<section style="background: var(--paper); padding: 5rem 2rem;">
+  <div class="section-inner">
+    <div class="two-col">
+      <div class="two-col-text">
+        <p class="section-eyebrow">Draggable UI</p>
+        <h2>Your toolbar, your way</h2>
+        <p>The floating drawing toolbar can be dragged anywhere on screen with the six-dot grip handle. Double-click the grip to snap it back to the default bottom-centre position.</p>
+        <p>The separate Shapes &amp; Graph panel is its own draggable floating window — keep it open while you draw shape after shape without re-opening a dropdown.</p>
+      </div>
+      <div class="two-col-visual">
+        <img
+          src="examples/demo.gif"
+          alt="Draggable toolbar and shapes panel in the Maples Academy Smartboard Tool"
+          loading="lazy"
+          width="480"
+          height="300"
+        />
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="padding: 5rem 2rem;">
+  <div class="section-inner">
+    <div class="two-col reverse">
+      <div class="two-col-text">
+        <p class="section-eyebrow">Ghost Shape Preview</p>
+        <h2>See shapes before you commit them</h2>
+        <p>Every shape tool shows a live dotted ghost outline as you drag — matching the exact shape that will be placed on release. A size badge shows the bounding box dimensions in real time.</p>
+        <p>Lines and arrows preview endpoint-to-endpoint. Freehand strokes render live as you draw. Nothing appears unexpectedly.</p>
+      </div>
+      <div class="two-col-visual">
+        <img
+          src="examples/mobile.gif"
+          alt="Ghost shape preview on mobile — dotted outline tracks pointer while drawing"
+          loading="lazy"
+          width="480"
+          height="300"
+        />
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── TOOLS SHOWCASE ── -->
+<section id="tools" class="tools-bg">
+  <div class="section-inner">
+    <p class="section-eyebrow" style="color:#93c5fd">Full tool inventory</p>
+    <h2 class="section-title">Every tool a teacher needs</h2>
+    <p class="section-sub">25 drawing and annotation tools, all accessible from the floating dock or the shapes panel.</p>
+    <div class="tools-grid">
+      <div class="tool-chip"><span>↖</span>Select</div>
+      <div class="tool-chip"><span>✋</span>Pan</div>
+      <div class="tool-chip"><span>✎</span>Pen</div>
+      <div class="tool-chip"><span>✒️</span>Calligraphy</div>
+      <div class="tool-chip"><span>▰</span>Highlighter</div>
+      <div class="tool-chip"><span>🧹</span>Pixel Eraser</div>
+      <div class="tool-chip"><span>⌫</span>Object Eraser</div>
+      <div class="tool-chip"><span>□</span>Rectangle</div>
+      <div class="tool-chip"><span>○</span>Ellipse</div>
+      <div class="tool-chip"><span>△</span>Triangle</div>
+      <div class="tool-chip"><span>◺</span>Rt Triangle</div>
+      <div class="tool-chip"><span>◇</span>Diamond</div>
+      <div class="tool-chip"><span>▱</span>Parallelogram</div>
+      <div class="tool-chip"><span>⬠</span>Pentagon</div>
+      <div class="tool-chip"><span>⬡</span>Hexagon</div>
+      <div class="tool-chip"><span>⯃</span>Octagon</div>
+      <div class="tool-chip"><span>✚</span>Cross</div>
+      <div class="tool-chip"><span>☆</span>Star</div>
+      <div class="tool-chip"><span>♡</span>Heart</div>
+      <div class="tool-chip"><span>☁</span>Cloud</div>
+      <div class="tool-chip"><span>⌻</span>Cylinder</div>
+      <div class="tool-chip"><span>／</span>Line</div>
+      <div class="tool-chip"><span>➜</span>Arrow</div>
+      <div class="tool-chip"><span>T</span>Text</div>
+      <div class="tool-chip"><span>📈</span>Graph</div>
+      <div class="tool-chip"><span>🖼</span>Image</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── HOW IT WORKS ── -->
+<section id="how-it-works">
+  <div class="section-inner">
+    <p class="section-eyebrow">Simple workflow</p>
+    <h2 class="section-title">From zero to presenting in 4 steps</h2>
+    <p class="section-sub">No training needed. Open the app, load a PDF or start a blank canvas, and teach.</p>
+    <div class="steps">
+      <div class="step">
+        <h3>Sign in or run locally</h3>
+        <p>Use Supabase auth for cloud sync and multi-device access, or just run <code>pnpm dev</code> and open localhost:3000 without a backend.</p>
+      </div>
+      <div class="step">
+        <h3>Open a PDF or start blank</h3>
+        <p>Import any PDF from the dashboard or start a 16:9 blank slide presentation. PDFs render at full 4K quality automatically.</p>
+      </div>
+      <div class="step">
+        <h3>Annotate and present</h3>
+        <p>Use the floating toolbar to draw, write, place shapes and text. Hit Present to hide all controls and project the clean slide.</p>
+      </div>
+      <div class="step">
+        <h3>Export as PDF</h3>
+        <p>Click Export PDF in the top bar to download the full presentation with all annotations baked into a standard PDF file.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── TECH STACK ── -->
+<section style="background: var(--paper); padding: 4rem 2rem;">
+  <div class="section-inner">
+    <p class="section-eyebrow">Technology</p>
+    <h2 class="section-title">Built on a solid modern stack</h2>
+    <div class="tech-list" style="margin-top: 1rem;">
+      <span class="tech-badge">▲ Next.js 15</span>
+      <span class="tech-badge">⚛ React 19</span>
+      <span class="tech-badge">📘 TypeScript 5</span>
+      <span class="tech-badge">🗄 Supabase</span>
+      <span class="tech-badge">📄 PDF.js 4.3</span>
+      <span class="tech-badge">📦 pdf-lib</span>
+      <span class="tech-badge">🔑 Supabase SSR Auth</span>
+      <span class="tech-badge">🧪 Vitest</span>
+      <span class="tech-badge">🎨 Vanilla CSS</span>
+      <span class="tech-badge">🔲 SVG Canvas</span>
+    </div>
+  </div>
+</section>
+
+<!-- ── ROUTES ── -->
+<section id="routes">
+  <div class="section-inner">
+    <p class="section-eyebrow">App structure</p>
+    <h2 class="section-title">Routes and pages</h2>
+    <table class="routes-table" aria-label="Application routes">
+      <thead>
+        <tr>
+          <th>Route</th>
+          <th>Page</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="route-pill">/</span></td><td>Landing</td><td>Entry point — redirects authenticated users to the dashboard.</td></tr>
+        <tr><td><span class="route-pill">/sign-in</span></td><td>Sign In</td><td>Email/password login. Redirects to <code>/dashboard</code> on success.</td></tr>
+        <tr><td><span class="route-pill">/dashboard</span></td><td>Dashboard</td><td>Browse, open, and manage saved documents. Shows recent activity.</td></tr>
+        <tr><td><span class="route-pill">/viewer</span></td><td>Smartboard Viewer</td><td>The main workspace — PDF viewer, annotation tools, present mode, export.</td></tr>
+        <tr><td><span class="route-pill">/documents</span></td><td>Documents Library</td><td>Full list of saved documents with delete and open actions.</td></tr>
+        <tr><td><span class="route-pill">/upload</span></td><td>Upload Hub</td><td>QR code generation for pairing a mobile device to the active session.</td></tr>
+        <tr><td><span class="route-pill">/upload/:sessionId</span></td><td>Mobile Upload</td><td>Mobile-optimised page opened by scanning the QR code.</td></tr>
+        <tr><td><span class="route-pill">/settings</span></td><td>Account Settings</td><td>User preferences and account management.</td></tr>
+        <tr><td><span class="route-pill">/api/import</span></td><td>Import API</td><td>Server route for optional PPT/PPTX → PDF conversion.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── SETUP ── -->
+<section id="setup" style="background: var(--paper);">
+  <div class="section-inner">
+    <p class="section-eyebrow">Get started in minutes</p>
+    <h2 class="section-title">Self-host in 3 steps</h2>
+    <div class="setup-steps">
+      <div class="setup-step">
+        <div class="setup-num">1</div>
+        <div>
+          <h3>Clone and install</h3>
+          <p>Requires Node.js 20+ and pnpm. Clone the repository and install dependencies.</p>
+          <div class="code-block">git clone https://github.com/Heoster/ClassBoard-.git &amp;&amp; cd ClassBoard- &amp;&amp; pnpm install</div>
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="setup-num">2</div>
+        <div>
+          <h3>Configure environment</h3>
+          <p>Create a <code>.env.local</code> file with your Supabase project credentials. The app works locally without Supabase — cloud sync and auth require these values.</p>
+          <div class="code-block">NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co<br>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key</div>
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="setup-num">3</div>
+        <div>
+          <h3>Apply database migration and start</h3>
+          <p>Apply <code>supabase/migrations/20260912000000_classboard.sql</code> in your Supabase SQL editor, then start the dev server.</p>
+          <div class="code-block">pnpm dev</div>
+          <p style="margin-top: 0.5rem; font-size: 0.78rem; color: #64748b;">Open <a href="http://localhost:3000">http://localhost:3000</a></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA ── -->
+<section class="cta-banner">
+  <h2>Ready to teach smarter?</h2>
+  <p>Free, open-source, and self-hostable. Star the repo to stay updated with new features.</p>
+  <a href="https://github.com/Heoster/ClassBoard-" target="_blank" rel="noopener" class="btn-white">
+    ⭐ Star on GitHub
+  </a>
+</section>
+
+<!-- ── FOOTER ── -->
+<footer>
+  <div>
+    <strong style="color:#fff">MAPLES ACADEMY SMARTBOARD TOOL</strong> &nbsp;·&nbsp;
+    Open source classroom presentation software
+  </div>
+  <div class="footer-links">
+    <a href="https://github.com/Heoster/ClassBoard-" target="_blank" rel="noopener">GitHub</a>
+    <a href="LICENSE">License</a>
+    <a href="THIRD_PARTY_NOTICES.md">Third-party notices</a>
+    <a href="#setup">Setup</a>
+  </div>
+</footer>
+
+</body>
+</html>
