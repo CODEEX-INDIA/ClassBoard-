@@ -15,6 +15,7 @@ const PAD = 18; // extra invisible hit-area padding in SVG units (viewBox is 0â€
 function HitAreaWrapper({
   annotation,
   selected,
+  isDrawingTool,
   onPointerDown,
   children,
 }: ShapeComponentProps & { children: React.ReactNode }) {
@@ -28,7 +29,7 @@ function HitAreaWrapper({
 
   return (
     <g
-      style={{ cursor: selected ? "grab" : "pointer" }}
+      style={{ cursor: selected ? "grab" : isDrawingTool ? "crosshair" : "pointer" }}
       transform={rot ? `rotate(${rot} ${cx} ${cy})` : undefined}
     >
       {/* Invisible padded hit area for easy tap/select */}
@@ -39,12 +40,14 @@ function HitAreaWrapper({
         height={h}
         fill="transparent"
         stroke="none"
-        pointerEvents="all"
+        pointerEvents={isDrawingTool ? "none" : "all"}
         onPointerDown={(e) => {
-          e.stopPropagation();
+          if (!isDrawingTool) {
+            e.stopPropagation();
+          }
           onPointerDown(e as React.PointerEvent, annotation);
         }}
-        style={{ cursor: selected ? "grab" : "pointer" }}
+        style={{ cursor: selected ? "grab" : isDrawingTool ? "crosshair" : "pointer" }}
       />
       {children}
     </g>
@@ -52,24 +55,25 @@ function HitAreaWrapper({
 }
 
 export function AnnotationShape(props: ShapeComponentProps) {
-  const { annotation, selected, onPointerDown } = props;
+  const { annotation, selected, isDrawingTool, onPointerDown } = props;
 
-  // Wrap onPointerDown to always stopPropagation â€” prevents background from deselecting on tap
+  // Wrap onPointerDown to stopPropagation only when NOT in drawing mode
   const wrappedOnPointerDown = (e: React.PointerEvent, a: typeof annotation) => {
-    e.stopPropagation();
+    if (!isDrawingTool) e.stopPropagation();
     onPointerDown(e, a);
   };
 
   const wrappedProps = { ...props, onPointerDown: wrappedOnPointerDown };
 
   const brushTypes = ["ink", "calligraphy", "highlighter"];
-  const basicShapeTypes = ["rectangle", "ellipse", "triangle", "diamond", "star", "cloud"];
+  const basicShapeTypes = ["rectangle", "ellipse", "triangle", "diamond", "star", "cloud",
+    "pentagon", "hexagon", "octagon", "heart", "cross", "parallelogram", "right-triangle", "cylinder"];
   const connectorTypes = ["line", "arrow"];
 
   if (brushTypes.includes(annotation.type)) {
     // Brush strokes: use HitAreaWrapper with a wide stroke ghost path for easy grab
     return (
-      <HitAreaWrapper {...props} onPointerDown={wrappedOnPointerDown}>
+      <HitAreaWrapper {...props} isDrawingTool={isDrawingTool} onPointerDown={wrappedOnPointerDown}>
         <BrushShape {...wrappedProps} />
       </HitAreaWrapper>
     );

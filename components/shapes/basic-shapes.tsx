@@ -62,6 +62,79 @@ export function BasicShape({ annotation, selected, onPointerDown }: ShapeCompone
       );
     }
 
+    case "pentagon": {
+      const pts = Array.from({ length: 5 }, (_, i) => {
+        const angle = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+        return `${cx + Math.cos(angle) * width / 2},${cy + Math.sin(angle) * height / 2}`;
+      }).join(" ");
+      return <polygon points={pts} {...commonProps} />;
+    }
+
+    case "hexagon": {
+      const pts = Array.from({ length: 6 }, (_, i) => {
+        const angle = (i * Math.PI) / 3;
+        return `${cx + Math.cos(angle) * width / 2},${cy + Math.sin(angle) * height / 2}`;
+      }).join(" ");
+      return <polygon points={pts} {...commonProps} />;
+    }
+
+    case "octagon": {
+      const pts = Array.from({ length: 8 }, (_, i) => {
+        const angle = -Math.PI / 8 + (i * Math.PI) / 4;
+        return `${cx + Math.cos(angle) * width / 2},${cy + Math.sin(angle) * height / 2}`;
+      }).join(" ");
+      return <polygon points={pts} {...commonProps} />;
+    }
+
+    case "heart": {
+      // Normalised heart path scaled to bounding box
+      const hx = x;
+      const hy = y;
+      const hw = width;
+      const hh = height;
+      const d = `M ${hx + hw * 0.5},${hy + hh * 0.3}
+        C ${hx + hw * 0.5},${hy + hh * 0.1} ${hx + hw * 0.15},${hy} ${hx},${hy + hh * 0.2}
+        C ${hx - hw * 0.05},${hy + hh * 0.45} ${hx + hw * 0.3},${hy + hh * 0.65} ${hx + hw * 0.5},${hy + hh}
+        C ${hx + hw * 0.7},${hy + hh * 0.65} ${hx + hw * 1.05},${hy + hh * 0.45} ${hx + hw},${hy + hh * 0.2}
+        C ${hx + hw * 0.85},${hy} ${hx + hw * 0.5},${hy + hh * 0.1} ${hx + hw * 0.5},${hy + hh * 0.3} Z`;
+      return <path d={d} {...commonProps} />;
+    }
+
+    case "cross": {
+      const t = width * 0.28; // arm thickness
+      const pts = [
+        `${cx - t / 2},${y}`, `${cx + t / 2},${y}`,
+        `${cx + t / 2},${cy - t / 2}`, `${x + width},${cy - t / 2}`,
+        `${x + width},${cy + t / 2}`, `${cx + t / 2},${cy + t / 2}`,
+        `${cx + t / 2},${y + height}`, `${cx - t / 2},${y + height}`,
+        `${cx - t / 2},${cy + t / 2}`, `${x},${cy + t / 2}`,
+        `${x},${cy - t / 2}`, `${cx - t / 2},${cy - t / 2}`,
+      ].join(" ");
+      return <polygon points={pts} {...commonProps} />;
+    }
+
+    case "parallelogram": {
+      const offset = width * 0.2;
+      const pts = `${x + offset},${y} ${x + width},${y} ${x + width - offset},${y + height} ${x},${y + height}`;
+      return <polygon points={pts} {...commonProps} />;
+    }
+
+    case "right-triangle": {
+      const pts = `${x},${y} ${x + width},${y + height} ${x},${y + height}`;
+      return <polygon points={pts} {...commonProps} />;
+    }
+
+    case "cylinder": {
+      const ry2 = height * 0.14;
+      return (
+        <g {...commonProps}>
+          <rect x={x} y={y + ry2} width={width} height={height - ry2 * 2} stroke={color} strokeWidth={strokeWidth} fill={fillColor} opacity={opacity} />
+          <ellipse cx={cx} cy={y + ry2} rx={width / 2} ry={ry2} stroke={color} strokeWidth={strokeWidth} fill={fillColor} opacity={opacity} />
+          <ellipse cx={cx} cy={y + height - ry2} rx={width / 2} ry={ry2} stroke={color} strokeWidth={strokeWidth} fill={fillColor} opacity={opacity} />
+        </g>
+      );
+    }
+
     default:
       return <rect x={x} y={y} width={width} height={height} {...commonProps} />;
   }

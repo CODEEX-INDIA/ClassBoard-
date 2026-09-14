@@ -2,7 +2,8 @@ export const ANNOTATION_SCHEMA_VERSION = 1 as const;
 
 export type BrushType = "ink" | "calligraphy" | "highlighter";
 export type EraserType = "stroke-eraser" | "element-eraser" | "partial-eraser";
-export type ShapeType = "rectangle" | "ellipse" | "triangle" | "diamond" | "star" | "cloud" | "line" | "arrow" | "graph";
+export type ShapeType = "rectangle" | "ellipse" | "triangle" | "diamond" | "star" | "cloud" | "line" | "arrow" | "graph"
+  | "pentagon" | "hexagon" | "octagon" | "heart" | "cross" | "parallelogram" | "right-triangle" | "cylinder";
 
 export type AnnotationType =
   | BrushType
