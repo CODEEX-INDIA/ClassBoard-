@@ -2,23 +2,33 @@
 
 import type { ShapeComponentProps } from "./types";
 
-function pointsToSmoothPath(points: { x: number; y: number }[]): string {
-  if (!points || points.length === 0) return "";
-  if (points.length === 1) {
-    const p = points[0];
+function pointsToSmoothPath(rawPoints: { x: number; y: number }[]): string {
+  if (!rawPoints || rawPoints.length === 0) return "";
+  if (rawPoints.length === 1) {
+    const p = rawPoints[0];
     return `M ${p.x * 1000} ${p.y * 1000} L ${(p.x + 0.0005) * 1000} ${(p.y + 0.0005) * 1000}`;
   }
-  if (points.length === 2) {
-    return `M ${points[0].x * 1000} ${points[0].y * 1000} L ${points[1].x * 1000} ${points[1].y * 1000}`;
+  if (rawPoints.length === 2) {
+    return `M ${rawPoints[0].x * 1000} ${rawPoints[0].y * 1000} L ${rawPoints[1].x * 1000} ${rawPoints[1].y * 1000}`;
   }
 
-  let d = `M ${points[0].x * 1000} ${points[0].y * 1000}`;
-  for (let i = 1; i < points.length - 1; i++) {
-    const xc = (points[i].x + points[i + 1].x) / 2;
-    const yc = (points[i].y + points[i + 1].y) / 2;
-    d += ` Q ${points[i].x * 1000} ${points[i].y * 1000}, ${xc * 1000} ${yc * 1000}`;
+  const p0 = rawPoints[0];
+  const p1 = rawPoints[1];
+  const midX = (p0.x + p1.x) / 2;
+  const midY = (p0.y + p1.y) / 2;
+
+  let d = `M ${p0.x * 1000} ${p0.y * 1000} L ${midX * 1000} ${midY * 1000}`;
+
+  for (let i = 1; i < rawPoints.length - 1; i++) {
+    const curr = rawPoints[i];
+    const next = rawPoints[i + 1];
+    const nextMidX = (curr.x + next.x) / 2;
+    const nextMidY = (curr.y + next.y) / 2;
+    d += ` Q ${curr.x * 1000} ${curr.y * 1000}, ${nextMidX * 1000} ${nextMidY * 1000}`;
   }
-  d += ` L ${points[points.length - 1].x * 1000} ${points[points.length - 1].y * 1000}`;
+
+  const lastPt = rawPoints[rawPoints.length - 1];
+  d += ` L ${lastPt.x * 1000} ${lastPt.y * 1000}`;
   return d;
 }
 
