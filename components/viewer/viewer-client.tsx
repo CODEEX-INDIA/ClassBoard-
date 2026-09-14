@@ -70,6 +70,16 @@ function pointsToSmoothPath(points: { x: number; y: number }[]): string {
   return d;
 }
 
+function distToSegment(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
 const shortTitle = (filename: string) => {
   const extension = filename.match(/\.[^.]+$/)?.[0] ?? "";
   const base = filename.slice(0, filename.length - extension.length).replace(/\.+$/, "").trim();
@@ -614,7 +624,15 @@ export function ViewerClient() {
       if (tool === "stroke-eraser") {
         let hit = false;
         if (a.points && a.points.length > 0) {
-          hit = a.points.some(pt => Math.hypot(pt.x - p.x, pt.y - p.y) <= radius);
+          hit = a.points.some((pt, idx) => {
+            const ptHit = Math.hypot(pt.x - p.x, pt.y - p.y) <= radius;
+            if (ptHit) return true;
+            if (idx > 0) {
+              const prev = a.points![idx - 1];
+              return distToSegment(p, prev, pt) <= radius;
+            }
+            return false;
+          });
         } else {
           hit = p.x >= a.x - radius && p.x <= a.x + a.width + radius && p.y >= a.y - radius && p.y <= a.y + a.height + radius;
         }
@@ -624,8 +642,15 @@ export function ViewerClient() {
           let changedThisAnnot = false;
           const subStrokes: Point[][] = [];
           let currentSub: Point[] = [];
-          for (const pt of a.points) {
-            if (Math.hypot(pt.x - p.x, pt.y - p.y) <= radius) {
+
+          for (let i = 0; i < a.points.length; i++) {
+            const pt = a.points[i];
+            const prev = i > 0 ? a.points[i - 1] : null;
+            const ptHit = Math.hypot(pt.x - p.x, pt.y - p.y) <= radius;
+            const segHit = prev ? distToSegment(p, prev, pt) <= radius : false;
+            const isHit = ptHit || segHit;
+
+            if (isHit) {
               changedThisAnnot = true;
               if (currentSub.length >= 2) subStrokes.push(currentSub);
               currentSub = [];
@@ -817,6 +842,24 @@ export function ViewerClient() {
 
   // eraseAtPoint: apply erase visually without cloud save (done on pointer-up)
   const eraseAtPoint = (p: Point) => applyEraseLocally(p);
+
+  const clearDrawingsOnPage = () => {
+    const next = annotations.filter(a => a.pageNumber !== page || !drawingTypes.includes(a.type as AnnotationType));
+    commit(next);
+    setStatus("Cleared drawings on current page");
+  };
+
+  const clearShapesOnPage = () => {
+    const next = annotations.filter(a => a.pageNumber !== page || drawingTypes.includes(a.type as AnnotationType));
+    commit(next);
+    setStatus("Cleared shapes and text on current page");
+  };
+
+  const clearAllOnPage = () => {
+    const next = annotations.filter(a => a.pageNumber !== page);
+    commit(next);
+    setStatus("Cleared all annotations on current page");
+  };
 
   const resizeSelected = (value: number) => {
     setSize(value);
@@ -1312,7 +1355,7 @@ export function ViewerClient() {
                         setOpacity(0.45); // semi-transparent for text highlighting
                         if (width < 8) setWidth(14);
                       }
-                      setPropertiesOpen(!item.id.includes("eraser") && item.id !== "pan");
+                      setPropertiesOpen(item.id !== "pan");
                     }}
                   >
                     <span>{item.icon}</span>
@@ -1332,22 +1375,59 @@ export function ViewerClient() {
                   )}
 
                   {tool.includes("eraser") && (
-                    <label>
-                      Eraser Size ({eraserSize}px)
-                      <div className="stroke-presets">
-                        {[12, 24, 40, 60].map(sz => (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem", width: "100%" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                        <strong style={{ fontSize: "0.72rem" }}>Eraser Mode:</strong>
+                        <div className="stroke-presets">
                           <button
-                            key={sz}
                             type="button"
-                            className={`stroke-btn ${eraserSize === sz ? "active" : ""}`}
-                            onClick={() => setEraserSize(sz)}
+                            className={`stroke-btn ${tool === "stroke-eraser" ? "active" : ""}`}
+                            onClick={() => setTool("stroke-eraser")}
+                            title="Erases full strokes or objects when touched"
                           >
-                            {sz === 12 ? "Small" : sz === 24 ? "Med" : sz === 40 ? "Large" : "XL"}
+                            ⌫ Object Eraser
                           </button>
-                        ))}
+                          <button
+                            type="button"
+                            className={`stroke-btn ${tool === "partial-eraser" ? "active" : ""}`}
+                            onClick={() => setTool("partial-eraser")}
+                            title="Precise pixel cutter for ink strokes"
+                          >
+                            ✂ Pixel Eraser
+                          </button>
+                        </div>
                       </div>
-                      <input aria-label="Eraser size" type="range" min="10" max="60" value={eraserSize} onChange={e => setEraserSize(+e.target.value)} />
-                    </label>
+
+                      <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                        <span style={{ fontSize: "0.72rem", fontWeight: 600 }}>Eraser Size ({eraserSize}px)</span>
+                        <div className="stroke-presets">
+                          {[8, 16, 30, 50, 80].map(sz => (
+                            <button
+                              key={sz}
+                              type="button"
+                              className={`stroke-btn ${eraserSize === sz ? "active" : ""}`}
+                              onClick={() => setEraserSize(sz)}
+                            >
+                              {sz === 8 ? "Fine" : sz === 16 ? "Small" : sz === 30 ? "Med" : sz === 50 ? "Large" : "XL"}
+                            </button>
+                          ))}
+                        </div>
+                        <input aria-label="Eraser size" type="range" min="5" max="100" value={eraserSize} onChange={e => setEraserSize(+e.target.value)} />
+                      </label>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap", paddingTop: "0.3rem", borderTop: "1px solid #e2e8f0" }}>
+                        <strong style={{ fontSize: "0.72rem" }}>Clear Options:</strong>
+                        <button type="button" onClick={clearDrawingsOnPage} title="Clear all freehand ink/pen drawings on this page">
+                          ✏️ Clear Ink
+                        </button>
+                        <button type="button" onClick={clearShapesOnPage} title="Clear all shapes and text on this page">
+                          📐 Clear Shapes
+                        </button>
+                        <button type="button" className="delete-action" onClick={clearAllOnPage} title="Clear all annotations on this page">
+                          🗑️ Clear Page
+                        </button>
+                      </div>
+                    </div>
                   )}
 
                   {/* Font & Text Size Controls */}
