@@ -16,8 +16,8 @@ const tools: Array<{ id: AnnotationType | "select" | "pan"; label: string; icon:
   { id: "ink", label: "Pen", icon: "✎" },
   { id: "calligraphy", label: "Calli", icon: "✒️" },
   { id: "highlighter", label: "Highlight", icon: "▰" },
-  { id: "stroke-eraser", label: "Erase", icon: "⌫" },
-  { id: "partial-eraser", label: "Cut", icon: "✂" },
+  { id: "stroke-eraser", label: "Object Erase", icon: "⌫" },
+  { id: "partial-eraser", label: "Eraser", icon: "🧹" },
   { id: "rectangle", label: "Rectangle", icon: "□" },
   { id: "ellipse", label: "Circle", icon: "○" },
   { id: "triangle", label: "Triangle", icon: "△" },
@@ -1393,7 +1393,7 @@ export function ViewerClient() {
                             onClick={() => setTool("partial-eraser")}
                             title="Precise pixel cutter for ink strokes"
                           >
-                            ✂ Pixel Eraser
+                            🧹 Eraser
                           </button>
                         </div>
                       </div>
