@@ -906,7 +906,7 @@
 }
 .stroke-btn.active { background: var(--blue) !important; color: #fff !important; border-color: var(--blue) !important; }
 
-/* ─── LOADING OVERLAY ────────────────────────────────────────────────────── */
+/* ─── LOADING OVERLAY ───────────────────────────────────────────────────��── */
 .viewer-loading-overlay {
   position: fixed;
   inset: 0;
@@ -1557,4 +1557,32 @@
     max-height: 50dvh;
   }
   .shapes-panel-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* ─── Viewer polish and wide-screen safety ───────────────────────────────── */
+.viewer-workspace { min-width: 0; min-height: 0; position: relative; }
+.viewer-header > * { min-width: 0; }
+.floating-dock-wrapper { max-width: min(94vw, 980px); }
+.control-dock { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; }
+.control-dock.collapsed { visibility: hidden; }
+.dock-trigger-pill { visibility: visible; }
+.dock-edge-target { pointer-events: auto; }
+@media (min-width: 1200px) {
+  .viewer-header { padding-inline: 1.4rem; gap: 1rem; }
+  .document-title { max-width: 420px; }
+  .viewer-body { grid-template-columns: 224px minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+  .viewer-header { gap: .5rem; }
+  .header-action-btn { padding-inline: .55rem; }
+  .header-action-btn:not(.header-export-btn) { display: none; }
+  .floating-dock-wrapper { max-width: calc(100vw - 1rem); }
+}
+@media (max-width: 600px) {
+  .viewer-header { flex-wrap: nowrap; }
+  .viewer-brand { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+  .header-undo-redo { display: none; }
+  .present-btn { padding-inline: .65rem; }
+  .floating-dock-wrapper { left: .5rem !important; right: .5rem; width: auto; }
+  .dock-free { max-width: calc(100vw - 1rem); }
 }
