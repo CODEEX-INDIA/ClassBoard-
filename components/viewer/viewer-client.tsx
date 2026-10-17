@@ -1127,7 +1127,7 @@ export function ViewerClient() {
         }}
       />
 
-      {/* ─── TOP HEADER — FIX #23: clear visual grouping ────────────────── */}
+      {/* ─── TOP HEADER — FIX #23: clear visual grouping ───────���────────── */}
       <header className="viewer-header" onPointerDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
         {/* Brand group */}
         <a href="/dashboard" className="viewer-brand">← MAPLES <span>ACADEMY</span></a>
@@ -1833,9 +1833,9 @@ export function ViewerClient() {
                   </button>
 
                   {/* Collapse dock */}
-                  <button type="button" title="Collapse Toolbar" onClick={() => setDockCollapsed(true)} style={{ opacity: 0.7 }}>
-                    <span>▼</span><small>Hide</small>
-                  </button>
+<button type="button" title="Hide drawing tools" aria-label="Hide drawing tools" aria-pressed={dockCollapsed} onClick={() => { setDockCollapsed(true); setActiveDropdown(null); setPropertiesOpen(false); }} style={{ opacity: 0.7 }}>
+                      <span>▼</span><small>Hide</small>
+                    </button>
                 </div>
               </div>
             </div>
