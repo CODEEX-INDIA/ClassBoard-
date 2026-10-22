@@ -26,7 +26,10 @@
   overscroll-behavior: none;
   background: var(--v-bg);
   color: var(--v-text);
-  font-size: 15px;
+  /* Responsive base: scales chrome UI with viewport; large classroom displays get larger controls */
+  font-size: clamp(13px, 0.72vw + 8px, 16px);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 /* ---------- Shared control overrides for the dark chrome ---------- */
@@ -1407,4 +1410,33 @@
   .viewer-body {
     backdrop-filter: none;
   }
+}
+
+/* ---------- Large classroom display scaling ---------- */
+@media (min-width: 1920px) {
+  .viewer { font-size: clamp(15px, 0.55vw + 6px, 19px); }
+  .dock-btn { width: 68px; min-height: 62px; }
+  .dock-btn-icon svg { width: 24px; height: 24px; }
+  .dock-btn-label { font-size: 12px; }
+  .stage { padding: 16px; }
+  .page-pill, .zoom-chip { font-size: 0.95rem; }
+  .shapes-panel { width: min(340px, calc(100vw - 24px)); }
+}
+@media (min-width: 2560px) {
+  .viewer { font-size: clamp(16px, 0.5vw + 7px, 20px); }
+  .dock-btn { width: 76px; min-height: 68px; }
+  .stage { padding: 20px; }
+}
+
+/* ---------- Text annotation responsive tweaks ---------- */
+.annotation text {
+  /* Ensure SVG text scales crisply on high-DPI large displays */
+  paint-order: stroke;
+  vector-effect: non-scaling-stroke;
+}
+
+/* ---------- Prevent system font-scale distortion in WebView ---------- */
+.viewer * {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }

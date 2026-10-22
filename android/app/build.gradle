@@ -1,0 +1,67 @@
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+
+android {
+    namespace 'com.classboard.app'
+    compileSdk 35
+    defaultConfig {
+        applicationId "com.classboard.app"
+        minSdkVersion 23
+        targetSdkVersion 35
+        versionCode 1
+        versionName "1.0.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            debuggable true
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+    // Classroom boards often run low-RAM devices — keep dex lean
+    packagingOptions {
+        resources.excludes += ['META-INF/DEPENDENCIES']
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+    flatDir { dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs' }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation project(':capacitor-android')
+    implementation project(':capacitor-app')
+    implementation project(':capacitor-splash-screen')
+    implementation project(':capacitor-status-bar')
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'com.google.android.material:material:1.12.0'
+}
+
+apply from: 'capacitor.build.gradle'
+
+task copyDebugApk(type: Copy) {
+    from 'build/outputs/apk/debug'
+    into '../../public'
+    include 'app-debug.apk'
+    rename 'app-debug.apk', 'CODEEX-STUDIO.apk'
+}
+task copyReleaseApk(type: Copy) {
+    from 'build/outputs/apk/release'
+    into '../../public'
+    include 'app-release*.apk'
+    rename 'app-release-unsigned.apk', 'CODEEX-STUDIO.apk'
+}

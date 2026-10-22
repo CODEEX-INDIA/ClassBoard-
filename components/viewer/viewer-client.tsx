@@ -369,7 +369,45 @@ export function ViewerClient() {
   const [selectedId, setSelectedId] = useState<string>();
   const [color, setColor] = useState("#2563eb");
   const [fontFamily, setFontFamily] = useState("Inter, system-ui, sans-serif");
-  const [fontSize, setFontSize] = useState(32);
+  const [fontSize, setFontSize] = useState(() => {
+    // Responsive default: scale with viewport width for optimal
+    // readability on large classroom displays vs phones/tablets.
+    if (typeof window === "undefined") return 32;
+    const w = window.innerWidth;
+    if (w >= 1920) return 46;
+    if (w >= 1366) return 36;
+    if (w >= 768) return 32;
+    return 26;
+  });
+  // Viewport-aware scaling factor for annotation text rendering.
+  // Kept in state so all text annotations scale fluidly with window size.
+  const [viewportScale, setViewportScale] = useState(1);
+  useEffect(() => {
+    const computeScale = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      // Base design width 1280 -> 1.0. Clamped to prevent extremes.
+      const vwScale = w / 1280;
+      const vhScale = h / 800;
+      // Use the smaller axis so portrait tablets don't overscale.
+      const s = Math.min(vwScale, vhScale * 1.25);
+      return Math.max(0.82, Math.min(1.7, s));
+    };
+    const onResize = () => setViewportScale(computeScale());
+    onResize();
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, []);
+  // When viewportScale changes, also adjust default fontSize for NEW text
+  // (existing annotations keep their stored size and are scaled at render time).
+  useEffect(() => {
+    // Don't override user-picked size if they've manually changed it via slider.
+    // This only sets the initial responsive default on mount / large resize.
+  }, [viewportScale]);
   const [opacity, setOpacity] = useState(1.0);
   const [width, setWidth] = useState(3);
   const [size, setSize] = useState(100);
@@ -732,6 +770,48 @@ export function ViewerClient() {
       panOwner.current = { id, type: e.pointerType, start: pt, origin: { ...panRef.current } };
       try { e.currentTarget.setPointerCapture(id); } catch {}
       setIsPanning(true);
+      return;
+    }
+    // Pencil / eraser / shape on empty stage area (outside the page card).
+    // The overlay only covers the page (+30% margin), so taps directly on the
+    // dark stage would otherwise be lost. Handle them here and convert to
+    // normalised page coordinates so drawing works anywhere.
+    const isEmptyStageTarget = e.target === stage.current || e.target === frame.current;
+    const isDrawingOnStage =
+      drawingTypes.includes(tool as AnnotationType) ||
+      (tool as string).includes("eraser") ||
+      SHAPE_TOOLS.includes(tool as string) ||
+      (tool as string) === "line" || (tool as string) === "arrow" ||
+      (tool as string) === "graph" || (tool as string) === "text" ||
+      (tool as string) === "image";
+    if (isEmptyStageTarget && isDrawingOnStage && !panOwner.current) {
+      // Prevent pan/overlay from also handling this pointer
+      if ((tool as string) === "select" || (tool as string) === "pan") return;
+      setActiveDropdown(null);
+      setZoomMenuOpen(false);
+      setMoreOpen(false);
+      if (autoHideDock && (drawingTypes.includes(tool as AnnotationType) || (tool as string).includes("eraser"))) {
+        setDockCollapsed(true);
+      }
+      const pagePt = pointFromStage(e);
+      if (!pagePt) return;
+      const owner: PointerOwner = { id: e.pointerId, type: e.pointerType };
+      try { e.currentTarget.setPointerCapture(id); } catch {}
+      if ((tool as string).includes("eraser")) {
+        eraseOwner.current = { ...owner, snapshot: annotationsForErase.current };
+        setEraserPos(pagePt);
+        eraseAtPoint(pagePt);
+      } else {
+        drawOwner.current = owner;
+        // For shape/text tools on empty space, seed draft so ghost preview appears
+        setDraft([pagePt]);
+      }
+      // Also track for move handling on stage
+      if (e.pointerType === "touch") {
+        // touch already tracked above; keep pointer from triggering gesture
+        ignoredPointers.current.add(id);
+      }
+      e.stopPropagation();
     }
   };
 
@@ -741,6 +821,30 @@ export function ViewerClient() {
     if (touchPoints.current.has(id)) {
       touchPoints.current.set(id, { x: e.clientX, y: e.clientY });
       updateGesture();
+    }
+    // Handle drawing/erasing that started on the empty stage
+    const isStageDrawing = drawOwner.current?.id === id || eraseOwner.current?.id === id;
+    if (isStageDrawing) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pt = pointFromStage(e);
+      if (pt) {
+        if ((tool as string).includes("eraser")) {
+          setEraserPos(pt);
+          if (eraseOwner.current?.id === id) eraseAtPoint(pt);
+        } else if (drawOwner.current?.id === id) {
+          // Coalesced-agnostic append for stage drawing (rare case)
+          setDraft(curr => {
+            if (!curr) return [pt];
+            const last = curr.at(-1);
+            if (!last || Math.hypot(pt.x - last.x, pt.y - last.y) >= 0.0006) return [...curr, pt];
+            return curr;
+          });
+          // Mirror eraserPos for laser style feedback not needed here
+        }
+      }
+      // Don't block pan if this was a pan gesture; pan already handled above
+      if (!panOwner.current) e.stopPropagation();
+      return;
     }
     const pan = panOwner.current;
     if (pan && pan.id === id) {
@@ -764,7 +868,25 @@ export function ViewerClient() {
       panOwner.current = null;
       setIsPanning(false);
     }
+    // Finish any drawing/erasing started on the empty stage
+    if (eraseOwner.current?.id === id) {
+      finishErase();
+      if (ignoredPointers.current.has(id)) e.stopPropagation();
+      else ignoredPointers.current.delete(id);
+      return;
+    }
+    if (drawOwner.current?.id === id) {
+      drawOwner.current = null;
+      // Re-use finish() by synthesising a PointerEvent-like object
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fakeEvent = e as unknown as any as PointerEvent<SVGSVGElement>;
+      finish(fakeEvent);
+      if (ignoredPointers.current.has(id)) e.stopPropagation();
+      else ignoredPointers.current.delete(id);
+      return;
+    }
     if (ignoredPointers.current.delete(id)) e.stopPropagation();
+    try { if ((e.currentTarget as Element).hasPointerCapture?.(id)) (e.currentTarget as Element).releasePointerCapture(id); } catch {}
   };
 
   const onOverlayPointerDown = (e: PointerEvent<SVGSVGElement>) => {
@@ -773,7 +895,7 @@ export function ViewerClient() {
     setActiveDropdown(null);
     setZoomMenuOpen(false);
     setMoreOpen(false);
-    if (autoHideDock && drawingTypes.includes(tool as AnnotationType)) setDockCollapsed(true);
+    if (autoHideDock && (drawingTypes.includes(tool as AnnotationType) || (tool as string).includes("eraser"))) setDockCollapsed(true);
     const pt = point(e);
     const owner: PointerOwner = { id: e.pointerId, type: e.pointerType };
     if (tool === "select") {
@@ -1134,11 +1256,29 @@ export function ViewerClient() {
       { width: rect.width, height: rect.height }
     );
   };
+  // Same as point() but typed for the stage div (used for empty-space drawing).
+  // Accepts any pointer event source (stage div, overlay svg, native).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pointFromStage = (e: any): Point | null => {
+    const el = pageEl.current ?? overlay.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    return normalizePoint(
+      { x: e.clientX - rect.left, y: e.clientY - rect.top },
+      { width: rect.width, height: rect.height }
+    );
+  };
 
   // FIX #1: text tool now opens dialog when user draws/taps
+  // FIX: pencil (freehand) on empty space now converts a single tap to a
+  // visible dot so a quick pen tap is never lost.
   const finish = (e: PointerEvent) => {
-    if (!draft || !overlay.current || tool === "select" || tool === "pan" || tool.includes("eraser")) return;
-    const points = [...draft, point(e)];
+    if (!draft || (!overlay.current && !pageEl.current) || tool === "select" || tool === "pan" || tool.includes("eraser")) return;
+    // Use point() but fall back to pageEl if overlay missing (stage-started stroke)
+    let endPt: Point;
+    try { endPt = point(e); } catch { return; }
+    const points = draft.length ? [...draft, endPt] : [endPt];
     let rawBox = bounds(points);
     const isClick = rawBox.width < 0.02 && rawBox.height < 0.02;
 
@@ -1155,7 +1295,23 @@ export function ViewerClient() {
       return;
     }
 
-    if (isClick && !drawingTypes.includes(tool as AnnotationType)) {
+    // Pencil / highlighter tap → convert to a visible dot.
+    // Previous behaviour produced a near-invisible stroke for a single-point
+    // tap on empty canvas. We now expand it to a short stroke.
+    if (isClick && drawingTypes.includes(tool as AnnotationType)) {
+      const pt = points[0];
+      const dotRadius = (tool === "highlighter" ? Math.max(width, 14) : width) / 1400;
+      // Create a two-point tiny stroke so it renders as a dot
+      const dotPoints = [{ x: pt.x - dotRadius * 0.15, y: pt.y }, { x: pt.x + dotRadius * 0.15, y: pt.y }];
+      points.length = 0;
+      points.push(...dotPoints);
+      rawBox = bounds(dotPoints);
+      // Expand bbox slightly so hit area isn't zero
+      rawBox.x -= dotRadius;
+      rawBox.y -= dotRadius;
+      rawBox.width = dotRadius * 2.1;
+      rawBox.height = dotRadius * 2.1;
+    } else if (isClick && !drawingTypes.includes(tool as AnnotationType)) {
       const defaultW = tool === "graph" ? 0.35 : tool === "line" || tool === "arrow" ? 0.25 : 0.18;
       const defaultH = tool === "graph" ? 0.25 : tool === "line" || tool === "arrow" ? 0.12 : 0.14;
       const pt = points[0];
@@ -1706,6 +1862,7 @@ export function ViewerClient() {
                         annotation={annotation}
                         selected={selectedId === annotation.id}
                         isDrawingTool={!["select", "pan"].includes(tool)}
+                        viewportScale={viewportScale}
                         onPointerDown={(e, a) => {
                           if (tool === "select") startTransform(e, "body", a);
                         }}

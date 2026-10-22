@@ -54,8 +54,8 @@ function HitAreaWrapper({
   );
 }
 
-export function AnnotationShape(props: ShapeComponentProps) {
-  const { annotation, selected, isDrawingTool, onPointerDown } = props;
+export function AnnotationShape(props: ShapeComponentProps & { viewportScale?: number }) {
+  const { annotation, selected, isDrawingTool, onPointerDown, viewportScale } = props as ShapeComponentProps & { viewportScale?: number };
 
   // Wrap onPointerDown to stopPropagation only when NOT in drawing mode
   const wrappedOnPointerDown = (e: React.PointerEvent, a: typeof annotation) => {

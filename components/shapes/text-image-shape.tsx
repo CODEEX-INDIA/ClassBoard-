@@ -2,7 +2,7 @@
 
 import type { ShapeComponentProps } from "./types";
 
-export function TextImageShape({ annotation, selected, onPointerDown }: ShapeComponentProps) {
+export function TextImageShape({ annotation, selected, onPointerDown, viewportScale }: ShapeComponentProps & { viewportScale?: number }) {
   const x = annotation.x * 1000;
   const y = annotation.y * 1000;
   const width = annotation.width * 1000;
@@ -12,7 +12,11 @@ export function TextImageShape({ annotation, selected, onPointerDown }: ShapeCom
   const rot = annotation.rotation ?? 0;
 
   const color = annotation.style.color || "#2563eb";
-  const fontSize = (annotation.style.fontSize ?? 32) * 1.25;
+  // Auto-configure font size based on viewport scale (responsive typography).
+  // Base size is stored in annotation; display size scales with window.
+  const scale = viewportScale ?? 1;
+  const baseFont = annotation.style.fontSize ?? 32;
+  const fontSize = baseFont * 1.25 * scale;
   const fontFamily = annotation.style.fontFamily ?? "Inter, system-ui, sans-serif";
   const opacity = annotation.style.opacity ?? 1;
 
