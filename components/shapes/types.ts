@@ -8,4 +8,6 @@ export type ShapeComponentProps = {
   /** When true, pointer events should bubble through so the drawing tool can capture them on the SVG overlay */
   isDrawingTool?: boolean;
   onPointerDown: (event: React.PointerEvent, annotation: Annotation) => void;
+  /** Responsive scale factor for text (1.0 = baseline 1280px width). */
+  viewportScale?: number;
 };

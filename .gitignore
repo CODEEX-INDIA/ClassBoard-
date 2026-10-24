@@ -31,6 +31,8 @@ node_modules/
 # Output
 dist/
 .next/
+out/
+.apk-staging/
 *.tsbuildinfo
 *.log
 
@@ -39,3 +41,11 @@ stats.json
 
 yarn.lock
 package-lock.json
+# Capacitor / Android — generated assets, do not commit build output
+android/app/src/main/assets/
+android/app/build/
+android/.gradle/
+android/capacitor-cordova-android-plugins/
+android/capacitor.settings.gradle
+out/
+.apk-staging/

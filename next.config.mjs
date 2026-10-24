@@ -6,8 +6,15 @@
 // In production the refresh runtime is never shipped, so we keep the strict CSP.
 const isDev = process.env.NODE_ENV === "development";
 
+const isCapacitorBuild = process.env.CAPACITOR === "true" || process.env.BUILD_MODE === "capacitor";
+
 const nextConfig = {
   // ─── Build ──────────────────────────────────────────────────────────────────
+  // Capacitor builds use a normal .next build; out/ is populated by the
+  // build-apk.sh script by copying the standalone/static assets. We do not
+  // set output:"export" here because dynamic routes (e.g. /upload/[sessionId])
+  // require generateStaticParams which would break `next build`.
+  ...(isCapacitorBuild ? { images: { unoptimized: true } } : {}),
   experimental: {
     serverActions: { bodySizeLimit: "50mb" },
   },

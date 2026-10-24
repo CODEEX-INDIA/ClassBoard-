@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+# Minimal gradlew stub — delegates to system gradle if available, otherwise
+# prints instructions. Replace with real wrapper by running:
+#   gradle wrapper --gradle-version 8.11.1
+set -e
+if command -v gradle >/dev/null 2>&1; then
+  exec gradle "$@"
+else
+  echo "Gradle not installed. Install Android Studio or SDK and run:"
+  echo "  ./gradlew assembleDebug"
+  echo "Alternatively: bash scripts/build-apk.sh (creates fallback APK)"
+  exit 1
+fi
